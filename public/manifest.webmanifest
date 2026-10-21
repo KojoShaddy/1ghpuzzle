@@ -1,0 +1,17 @@
+{
+  "name": "1Ghana Image Puzzle",
+  "short_name": "1Ghana Puzzle",
+  "description": "Reconstruct iconic Ghanaian emblems, landmarks, and music legends in this responsive tile puzzle game.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#006B3F",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

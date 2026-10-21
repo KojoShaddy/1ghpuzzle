@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="1Ghana Image Puzzle Logo">
+  <defs>
+    <clipPath id="orb-clip">
+      <circle cx="128" cy="124" r="112" />
+    </clipPath>
+
+    <!-- 3D Spherical Shading (Inner Depth) -->
+    <radialGradient id="orb-shade" cx="38%" cy="32%" r="68%" fx="35%" fy="28%">
+      <stop offset="0%" stopColor="#ffffff" stopOpacity="0.18" />
+      <stop offset="55%" stopColor="#000000" stopOpacity="0" />
+      <stop offset="82%" stopColor="#000000" stopOpacity="0.22" />
+      <stop offset="100%" stopColor="#000000" stopOpacity="0.52" />
+    </radialGradient>
+
+    <!-- Top-Left Glossy Specular Highlight -->
+    <linearGradient id="orb-gloss-top" x1="25%" y1="5%" x2="55%" y2="65%">
+      <stop offset="0%" stopColor="#ffffff" stopOpacity="0.62" />
+      <stop offset="45%" stopColor="#ffffff" stopOpacity="0.22" />
+      <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+    </linearGradient>
+
+    <!-- Secondary Rim Reflection -->
+    <linearGradient id="orb-gloss-side" x1="15%" y1="15%" x2="85%" y2="75%">
+      <stop offset="0%" stopColor="#ffffff" stopOpacity="0.45" />
+      <stop offset="60%" stopColor="#ffffff" stopOpacity="0.08" />
+      <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+    </linearGradient>
+
+    <!-- Drop Shadow Under Sphere -->
+    <radialGradient id="floor-shadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stopColor="#000000" stopOpacity="0.28" />
+      <stop offset="65%" stopColor="#000000" stopOpacity="0.1" />
+      <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Soft Floor Shadow -->
+  <ellipse cx="128" cy="244" rx="76" ry="8" fill="url(#floor-shadow)" />
+
+  <!-- Clipped 3D Ghana Flag Sphere -->
+  <g clipPath="url(#orb-clip)">
+    <!-- Base Gold Middle Band -->
+    <rect x="0" y="0" width="256" height="256" fill="#FFF200" />
+
+    <!-- Curved Red Top Band (3D Globe Curvature) -->
+    <path
+      d="M 0,0 L 256,0 L 256,92 Q 128,74 0,92 Z"
+      fill="#ED1C24"
+    />
+
+    <!-- Curved Green Bottom Band (3D Globe Curvature) -->
+    <path
+      d="M 0,156 Q 128,174 256,156 L 256,256 L 0,256 Z"
+      fill="#007A3D"
+    />
+
+    <!-- Black Five-Pointed Star of Ghana -->
+    <polygon
+      points="128,83 138.8,115.2 172.8,115.2 145.4,135.1 155.8,167.5 128,147.6 100.2,167.5 110.6,135.1 83.2,115.2 117.2,115.2"
+      fill="#0B0B0B"
+    />
+
+    <!-- 3D Spherical Volume Shading -->
+    <circle cx="128" cy="124" r="112" fill="url(#orb-shade)" />
+
+    <!-- Left-Side Curved Specular Sweep (Matching Reference Gloss) -->
+    <path
+      d="M 30,78 C 44,28 96,12 136,18 C 112,52 98,118 104,196 C 68,188 42,162 30,78 Z"
+      fill="url(#orb-gloss-top)"
+    />
+
+    <!-- Top Rim Highlight Arc -->
+    <path
+      d="M 28,86 A 104,104 0 0,1 226,82 C 216,100 202,108 192,104 C 178,52 96,26 42,92 Z"
+      fill="url(#orb-gloss-side)"
+    />
+  </g>
+
+  <!-- Crisp Outer Sphere Rim -->
+  <circle
+    cx="128"
+    cy="124"
+    r="111.5"
+    fill="none"
+    stroke="#000000"
+    strokeOpacity="0.15"
+    strokeWidth="1"
+  />
+</svg>
