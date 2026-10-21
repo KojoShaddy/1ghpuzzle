@@ -114,6 +114,15 @@ const KNOWN_IMAGE_CATALOGUE: Record<string, ImageCatalogueEntry> = {
       'Otumfuo Osei Tutu II is the 16th Asantehene, the traditional monarch of the Ashanti Kingdom and custodian of the sacred Golden Stool (Sika Dwa Kofi) at the Manhyia Palace in Kumasi. Since ascending the throne in 1999, he has been celebrated across Africa for championing education through the Otumfuo Foundation, cultural preservation, and national peacebuilding.',
     order: 8,
   },
+  'gamantse.jpg': {
+    id: 'ga-mantse',
+    title: 'Ga Mantse (King Tackie Teiko Tsuru II)',
+    category: 'Traditional Royalty',
+    subtitle: 'Paramount King of the Ga State in Greater Accra',
+    description:
+      'King Tackie Teiko Tsuru II serves as the Ga Mantse, the paramount traditional ruler of the Ga Mashie and wider Ga State in the Greater Accra Region. Celebrated during the vibrant annual Homowo festival, the Ga Mantse upholds centuries-old Ga customs, community development, youth education, and cultural unity across the capital.',
+    order: 9,
+  },
   'independence-square-accra.jpg': {
     id: 'independence-square-accra',
     title: 'Independence Square, Accra',

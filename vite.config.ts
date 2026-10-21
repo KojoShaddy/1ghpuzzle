@@ -5,4 +5,10 @@ import { scoringBackendPlugin } from './server/scoringApiPlugin.js';
 
 export default defineConfig({
   plugins: [react(), scoringBackendPlugin()],
+  server: {
+    watch: {
+      usePolling: true,
+      interval: 250,
+    },
+  },
 });
