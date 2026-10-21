@@ -148,8 +148,11 @@ export function formatTimeHuman(totalSeconds: number): string {
 }
 
 /**
- * Returns the storage key for best scores of a given image.
+ * Returns the storage key for best scores of a given image and player.
  */
-export function getScoreKey(imageId: string): string {
+export function getScoreKey(imageId: string, playerId?: string): string {
+  if (playerId) {
+    return `${playerId}:${imageId}-${DEFAULT_GRID_SIZE}`;
+  }
   return `${imageId}-${DEFAULT_GRID_SIZE}`;
 }

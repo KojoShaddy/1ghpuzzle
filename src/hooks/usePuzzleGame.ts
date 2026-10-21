@@ -27,12 +27,14 @@ import {
 import {
   abandonServerPuzzleSession,
   completeServerPuzzleSession,
+  createPlayerIdFromProfile,
   fetchGlobalLeaderboard,
   getOrCreatePlayerId,
   pauseServerPuzzleSession,
   registerPlayerProfile,
   resumeServerPuzzleSession,
   startServerPuzzleSession,
+  subscribeToLiveLeaderboard,
 } from '../utils/scoringService';
 import { useGameTimer } from './useGameTimer';
 import { useLocalStorage } from './useLocalStorage';
@@ -43,9 +45,9 @@ interface UsePuzzleGameProps {
 }
 
 export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
-  const [playerId] = useState<string>(() => getOrCreatePlayerId());
+  const [fallbackPlayerId] = useState<string>(() => getOrCreatePlayerId());
   const [playerProfile, setPlayerProfile] = useLocalStorage<PlayerProfile | null>(
-    'ghana-puzzle-player-profile-v3',
+    'ghana-puzzle-player-profile-v4',
     null
   );
 
@@ -67,11 +69,11 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const activeProfile = useMemo<PlayerProfile>(
     () =>
       playerProfile ?? {
-        playerId,
+        playerId: fallbackPlayerId,
         name: 'Player',
         region: 'Greater Accra',
       },
-    [playerProfile, playerId]
+    [playerProfile, fallbackPlayerId]
   );
 
   const [leaderboard, setLeaderboard] = useState<LeaderboardState>(() =>
@@ -85,7 +87,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const [lastScoreResult, setLastScoreResult] = useState<ScoreSubmissionResult | null>(null);
 
   const [bestScores, setBestScores] = useLocalStorage<BestScoresMap>(
-    'ghana-puzzle-best-scores-v3',
+    'ghana-puzzle-best-scores-v4',
     {}
   );
 
@@ -96,42 +98,87 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
     getMonotonicElapsedSeconds,
   } = useGameTimer(status);
 
+  const tilesRef = useRef<PuzzleTileData[]>(tiles);
+  tilesRef.current = tiles;
+
+  const movesRef = useRef<number>(moves);
+  movesRef.current = moves;
+
+  const statusRef = useRef<GameStatus>(status);
+  statusRef.current = status;
+
   const sessionIdRef = useRef<string | null>(null);
+  const startSessionPromiseRef = useRef<Promise<string> | null>(null);
   const submittedSessionIdsRef = useRef<Set<string>>(new Set());
 
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
 
-  // Load global leaderboard whenever a registered player profile is available
+  // Keep global leaderboard synchronized in real time across the session
   useEffect(() => {
-    if (!playerProfile) return;
     let active = true;
-    fetchGlobalLeaderboard(playerProfile).then((state) => {
-      if (active) setLeaderboard(state);
-    });
+    const profileToQuery: PlayerProfile = playerProfile ?? {
+      playerId: fallbackPlayerId,
+      name: 'Player',
+      region: 'Greater Accra',
+    };
+
+    const refreshLeaderboard = () => {
+      fetchGlobalLeaderboard(profileToQuery).then((state) => {
+        if (!active) return;
+        setLeaderboard(state);
+      });
+    };
+
+    refreshLeaderboard();
+    const unsubscribe = subscribeToLiveLeaderboard(refreshLeaderboard);
+
     return () => {
       active = false;
+      unsubscribe();
     };
-  }, [playerProfile]);
+  }, [playerProfile, fallbackPlayerId]);
 
   /**
-   * Registers or updates the player's Name/Nickname and Region, then opens the homepage gallery.
+   * Registers or switches to a player's Name/Nickname and Region without overwriting other session players.
    */
   const registerPlayer = useCallback(
     (name: string, region: string) => {
+      const cleanName = name.trim();
+      const cleanRegion = region.trim();
+      const candidatePlayerId = createPlayerIdFromProfile(cleanName, cleanRegion);
+
+      // Abandon any active puzzle session belonging to the previous player before switching
+      if (sessionIdRef.current && statusRef.current !== 'won') {
+        void abandonServerPuzzleSession(sessionIdRef.current);
+        sessionIdRef.current = null;
+      }
+      setStatus('idle');
+      setSelectedTileId(null);
+
       const updatedProfile: PlayerProfile = {
-        playerId,
-        name: name.trim(),
-        region: region.trim(),
+        playerId: candidatePlayerId,
+        name: cleanName,
+        region: cleanRegion,
       };
       setPlayerProfile(updatedProfile);
       setScreen('gallery');
 
       void registerPlayerProfile(updatedProfile).then((latestLeaderboard) => {
         setLeaderboard(latestLeaderboard);
+        if (
+          latestLeaderboard.playerEntry.playerId &&
+          latestLeaderboard.playerEntry.playerId !== candidatePlayerId
+        ) {
+          setPlayerProfile({
+            playerId: latestLeaderboard.playerEntry.playerId,
+            name: cleanName,
+            region: cleanRegion,
+          });
+        }
       });
     },
-    [playerId, setPlayerProfile]
+    [setPlayerProfile]
   );
 
   /**
@@ -155,12 +202,20 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const beginSessionForImage = useCallback(
     (image: PuzzleImage) => {
       // Abandon any prior active session so it cannot award points
-      if (sessionIdRef.current && status !== 'won') {
-        void abandonServerPuzzleSession(sessionIdRef.current);
+      const previousSessionId = sessionIdRef.current;
+      if (previousSessionId && statusRef.current !== 'won') {
+        void abandonServerPuzzleSession(previousSessionId);
       }
 
+      sessionIdRef.current = null;
+      const freshTiles = createShuffledTiles(DEFAULT_GRID_SIZE);
+
+      tilesRef.current = freshTiles;
+      movesRef.current = 0;
+      statusRef.current = 'playing';
+
       setSelectedImage(image);
-      setTiles(createShuffledTiles(DEFAULT_GRID_SIZE));
+      setTiles(freshTiles);
       setMoves(0);
       setSelectedTileId(null);
       setLastMovedTileIds(null);
@@ -170,16 +225,20 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
       setStatus('playing');
       setScreen('game');
 
-      void startServerPuzzleSession({
+      const startPromise = startServerPuzzleSession({
         profile: activeProfile,
         imageId: image.id,
         gridSize: DEFAULT_GRID_SIZE,
+        initialTiles: freshTiles,
       }).then(({ sessionId, leaderboard: latestLeaderboard }) => {
         sessionIdRef.current = sessionId;
         setLeaderboard(latestLeaderboard);
+        return sessionId;
       });
+
+      startSessionPromiseRef.current = startPromise;
     },
-    [activeProfile, resetTimer, status]
+    [activeProfile, resetTimer]
   );
 
   /**
@@ -267,110 +326,121 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
 
   /**
    * Swaps two tiles on the board and checks for puzzle completion.
+   * Executes outside the state updater to prevent StrictMode double-invocations and stale closures.
    */
   const handleSwapTiles = useCallback(
     (firstTileId: string, secondTileId: string) => {
-      if (status !== 'playing') return;
+      if (statusRef.current !== 'playing') return;
       if (firstTileId === secondTileId) return;
 
-      setTiles((prevTiles) => {
-        const { nextTiles, didSwap } = swapTilesById(prevTiles, firstTileId, secondTileId);
-        if (!didSwap) return prevTiles;
+      const currentTiles = tilesRef.current;
+      const { nextTiles, didSwap } = swapTilesById(currentTiles, firstTileId, secondTileId);
+      if (!didSwap) return;
 
-        const nextMoves = moves + 1;
-        setMoves(nextMoves);
-        setSelectedTileId(null);
-        setLastMovedTileIds([firstTileId, secondTileId]);
+      const nextMoves = movesRef.current + 1;
+      tilesRef.current = nextTiles;
+      movesRef.current = nextMoves;
 
-        const solved = isPuzzleSolved(nextTiles);
-        if (solved) {
-          setStatus('won');
-          soundFX.playVictory(soundEnabledRef.current);
+      setTiles(nextTiles);
+      setMoves(nextMoves);
+      setSelectedTileId(null);
+      setLastMovedTileIds([firstTileId, secondTileId]);
 
-          const monotonicSecs = Math.max(1, getMonotonicElapsedSeconds());
-          const immediatePoints = calculateTimeScore(monotonicSecs);
-          const immediateTier = getScoringTierForTime(monotonicSecs);
-          const activeSessionId =
-            sessionIdRef.current ?? `session-${Date.now()}-${selectedImage.id}`;
-          sessionIdRef.current = activeSessionId;
+      const solved = isPuzzleSolved(nextTiles);
+      if (solved) {
+        statusRef.current = 'won';
+        setStatus('won');
+        soundFX.playVictory(soundEnabledRef.current);
 
-          // Prevent duplicate submissions for the same completed puzzle session
-          if (!submittedSessionIdsRef.current.has(activeSessionId)) {
-            submittedSessionIdsRef.current.add(activeSessionId);
+        const monotonicSecs = Math.max(1, getMonotonicElapsedSeconds());
+        const immediatePoints = calculateTimeScore(monotonicSecs);
+        const immediateTier = getScoringTierForTime(monotonicSecs);
 
-            // Set immediate optimistic display from the single authoritative scoring function,
-            // then reconcile with the trusted backend response
-            setAuthoritativeSeconds(monotonicSecs);
-            setLastScoreResult({
-              sessionId: activeSessionId,
-              elapsedSeconds: monotonicSecs,
-              pointsAwarded: immediatePoints,
-              tierLabel: immediateTier.label,
-              cumulativeScore: leaderboard.playerEntry.cumulativeScore + immediatePoints,
-              globalRank: leaderboard.playerEntry.rank,
-              previousRank:
-                leaderboard.playerEntry.puzzlesSolved > 0
-                  ? leaderboard.playerEntry.rank
-                  : null,
-              totalPlayers: leaderboard.totalPlayers,
-              alreadyAwarded: false,
-              leaderboard,
-            });
-
-            void completeServerPuzzleSession({
-              sessionId: activeSessionId,
-              profile: activeProfile,
-              imageId: selectedImage.id,
-              gridSize: DEFAULT_GRID_SIZE,
-              finalTiles: nextTiles,
-              moves: nextMoves,
-              monotonicElapsedSeconds: monotonicSecs,
-            }).then((serverResult) => {
-              // Ensure displayed time and points always match the authoritative backend record
-              setAuthoritativeSeconds(serverResult.elapsedSeconds);
-              setLastScoreResult(serverResult);
-              setLeaderboard(serverResult.leaderboard);
-
-              const key = getScoreKey(selectedImage.id);
-              setBestScores((prevScores) => {
-                const existing = prevScores[key];
-                const isBetter =
-                  !existing ||
-                  serverResult.pointsAwarded > existing.points ||
-                  (serverResult.pointsAwarded === existing.points &&
-                    serverResult.elapsedSeconds < existing.timeSeconds);
-
-                if (isBetter) {
-                  setIsNewRecord(true);
-                  const updatedRecord: BestScoreRecord = {
-                    moves: nextMoves,
-                    timeSeconds: serverResult.elapsedSeconds,
-                    points: serverResult.pointsAwarded,
-                    achievedAt: new Date().toISOString(),
-                  };
-                  return { ...prevScores, [key]: updatedRecord };
-                }
-                return prevScores;
-              });
-            });
+        const submitScore = async () => {
+          let activeSessionId = sessionIdRef.current;
+          if (!activeSessionId && startSessionPromiseRef.current) {
+            try {
+              activeSessionId = await startSessionPromiseRef.current;
+            } catch {
+              // Fallback if start promise failed
+            }
           }
-        } else {
-          // Check if either swapped tile landed in its correct home slot
-          const swappedA = nextTiles.find((t) => t.id === firstTileId);
-          const swappedB = nextTiles.find((t) => t.id === secondTileId);
-          const landedCorrect = Boolean(
-            (swappedA && swappedA.correctIndex === swappedA.currentIndex) ||
-              (swappedB && swappedB.correctIndex === swappedB.currentIndex)
-          );
-          soundFX.playSwap(soundEnabledRef.current, landedCorrect);
-        }
+          if (!activeSessionId) {
+            activeSessionId = `session-${Date.now()}-${selectedImage.id}`;
+            sessionIdRef.current = activeSessionId;
+          }
 
-        return nextTiles;
-      });
+          if (submittedSessionIdsRef.current.has(activeSessionId)) {
+            return;
+          }
+          submittedSessionIdsRef.current.add(activeSessionId);
+
+          setAuthoritativeSeconds(monotonicSecs);
+          setLastScoreResult({
+            sessionId: activeSessionId,
+            elapsedSeconds: monotonicSecs,
+            pointsAwarded: immediatePoints,
+            tierLabel: immediateTier.label,
+            cumulativeScore: leaderboard.playerEntry.cumulativeScore + immediatePoints,
+            globalRank: leaderboard.playerEntry.rank,
+            previousRank:
+              leaderboard.playerEntry.puzzlesSolved > 0
+                ? leaderboard.playerEntry.rank
+                : null,
+            totalPlayers: leaderboard.totalPlayers,
+            alreadyAwarded: false,
+            leaderboard,
+          });
+
+          const serverResult = await completeServerPuzzleSession({
+            sessionId: activeSessionId,
+            profile: activeProfile,
+            imageId: selectedImage.id,
+            gridSize: DEFAULT_GRID_SIZE,
+            finalTiles: nextTiles,
+            moves: nextMoves,
+            monotonicElapsedSeconds: monotonicSecs,
+          });
+
+          setAuthoritativeSeconds(serverResult.elapsedSeconds);
+          setLastScoreResult(serverResult);
+          setLeaderboard(serverResult.leaderboard);
+
+          const key = getScoreKey(selectedImage.id, activeProfile.playerId);
+          setBestScores((prevScores) => {
+            const existing = prevScores[key];
+            const isBetter =
+              !existing ||
+              serverResult.pointsAwarded > existing.points ||
+              (serverResult.pointsAwarded === existing.points &&
+                serverResult.elapsedSeconds < existing.timeSeconds);
+
+            if (isBetter) {
+              setIsNewRecord(true);
+              const updatedRecord: BestScoreRecord = {
+                moves: nextMoves,
+                timeSeconds: serverResult.elapsedSeconds,
+                points: serverResult.pointsAwarded,
+                achievedAt: new Date().toISOString(),
+              };
+              return { ...prevScores, [key]: updatedRecord };
+            }
+            return prevScores;
+          });
+        };
+
+        void submitScore();
+      } else {
+        const swappedA = nextTiles.find((t) => t.id === firstTileId);
+        const swappedB = nextTiles.find((t) => t.id === secondTileId);
+        const landedCorrect = Boolean(
+          (swappedA && swappedA.correctIndex === swappedA.currentIndex) ||
+            (swappedB && swappedB.correctIndex === swappedB.currentIndex)
+        );
+        soundFX.playSwap(soundEnabledRef.current, landedCorrect);
+      }
     },
     [
-      status,
-      moves,
       selectedImage.id,
       activeProfile,
       leaderboard,
@@ -385,7 +455,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
    */
   const handleSelectOrSwapTile = useCallback(
     (tileId: string) => {
-      if (status !== 'playing') return;
+      if (statusRef.current !== 'playing') return;
 
       if (!selectedTileId) {
         setSelectedTileId(tileId);
@@ -396,7 +466,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
         handleSwapTiles(selectedTileId, tileId);
       }
     },
-    [status, selectedTileId, handleSwapTiles]
+    [selectedTileId, handleSwapTiles]
   );
 
   // Clear highlight animation after 350ms
@@ -411,10 +481,10 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const correctCount = countCorrectTiles(tiles);
   const progressPercentage = calculateProgressPercentage(tiles);
   const currentBestScore: BestScoreRecord | undefined =
-    bestScores[getScoreKey(selectedImage.id)];
+    bestScores[getScoreKey(selectedImage.id, activeProfile.playerId)];
 
   return {
-    playerId,
+    playerId: activeProfile.playerId,
     playerProfile,
     registerPlayer,
     openProfileEditor,

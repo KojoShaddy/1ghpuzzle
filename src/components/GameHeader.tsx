@@ -59,7 +59,7 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
             aria-label="1Ghana Image Puzzle"
           >
             <img
-              src={new URL('../../logo.png', import.meta.url).href}
+              src="/logo.png"
               alt="1Ghana Image Puzzle Logo"
               className="w-9 h-9 sm:w-10 sm:h-10 object-contain shrink-0"
             />

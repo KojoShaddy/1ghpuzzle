@@ -134,6 +134,13 @@ export function validateSolvedBoard(tiles: unknown, expectedGridSize: number): b
   });
 }
 
+export function createPlayerIdFromProfile(name: string, region: string): string {
+  const slug = `${name.trim().toLowerCase()}-${region.trim().toLowerCase()}`
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `player-${slug || 'guest'}`;
+}
+
 /**
  * Sorts leaderboard entries by cumulativeScore DESC, then bestTimeSeconds ASC, then updatedAt ASC,
  * and assigns 1-based global ranks. Starts completely clean with no fake seeded entries.
@@ -153,22 +160,64 @@ export function computeRankedLeaderboard(
     });
   }
 
-  if (currentPlayerId && !map.has(currentPlayerId)) {
-    map.set(currentPlayerId, {
-      playerId: currentPlayerId,
-      playerName: currentPlayerName,
-      region: currentPlayerRegion,
+  let resolvedPlayerId = currentPlayerId;
+  const cleanName = currentPlayerName.trim() || 'Player';
+  const cleanRegion = currentPlayerRegion.trim() || 'Greater Accra';
+
+  if (cleanName && cleanName !== 'Player') {
+    let matchedId: string | null = null;
+    for (const existing of map.values()) {
+      if (
+        existing.playerName.trim().toLowerCase() === cleanName.toLowerCase() &&
+        existing.region.trim().toLowerCase() === cleanRegion.toLowerCase()
+      ) {
+        matchedId = existing.playerId;
+        break;
+      }
+    }
+
+    if (matchedId) {
+      resolvedPlayerId = matchedId;
+      const existing = map.get(matchedId)!;
+      map.set(matchedId, {
+        ...existing,
+        playerName: cleanName,
+        region: cleanRegion,
+      });
+    } else if (
+      resolvedPlayerId &&
+      map.has(resolvedPlayerId) &&
+      map.get(resolvedPlayerId)!.playerName.trim().toLowerCase() === cleanName.toLowerCase()
+    ) {
+      const existing = map.get(resolvedPlayerId)!;
+      map.set(resolvedPlayerId, {
+        ...existing,
+        playerName: cleanName,
+        region: cleanRegion,
+      });
+    } else {
+      resolvedPlayerId = createPlayerIdFromProfile(cleanName, cleanRegion);
+      if (!map.has(resolvedPlayerId)) {
+        map.set(resolvedPlayerId, {
+          playerId: resolvedPlayerId,
+          playerName: cleanName,
+          region: cleanRegion,
+          cumulativeScore: 0,
+          puzzlesSolved: 0,
+          bestTimeSeconds: null,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+  } else if (resolvedPlayerId && !map.has(resolvedPlayerId)) {
+    map.set(resolvedPlayerId, {
+      playerId: resolvedPlayerId,
+      playerName: cleanName,
+      region: cleanRegion,
       cumulativeScore: 0,
       puzzlesSolved: 0,
       bestTimeSeconds: null,
       updatedAt: new Date().toISOString(),
-    });
-  } else if (currentPlayerId && map.has(currentPlayerId)) {
-    const existing = map.get(currentPlayerId)!;
-    map.set(currentPlayerId, {
-      ...existing,
-      playerName: currentPlayerName || existing.playerName,
-      region: currentPlayerRegion || existing.region,
     });
   }
 
@@ -194,10 +243,10 @@ export function computeRankedLeaderboard(
   }));
 
   const playerEntry =
-    rankedEntries.find((e) => e.playerId === currentPlayerId) ?? {
-      playerId: currentPlayerId,
-      playerName: currentPlayerName,
-      region: currentPlayerRegion,
+    rankedEntries.find((e) => e.playerId === resolvedPlayerId) ?? {
+      playerId: resolvedPlayerId,
+      playerName: cleanName,
+      region: cleanRegion,
       cumulativeScore: 0,
       puzzlesSolved: 0,
       bestTimeSeconds: null,

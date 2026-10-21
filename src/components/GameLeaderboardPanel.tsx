@@ -25,14 +25,21 @@ export const GameLeaderboardPanel: React.FC<GameLeaderboardPanelProps> = ({
             <Trophy className="w-4 h-4" />
           </div>
           <div>
-            <h2
-              id="game-leaderboard-heading"
-              className="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-tight"
-            >
-              Leaderboard
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2
+                id="game-leaderboard-heading"
+                className="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-tight"
+              >
+                Leaderboard
+              </h2>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Rank #{playerEntry.rank} - {playerEntry.cumulativeScore.toLocaleString()} pts
+              Rank #{playerEntry.rank} of {entries.length} •{' '}
+              {playerEntry.cumulativeScore.toLocaleString()} pts
             </p>
           </div>
         </div>
@@ -43,7 +50,7 @@ export const GameLeaderboardPanel: React.FC<GameLeaderboardPanelProps> = ({
           onClick={onOpenFullLeaderboard}
           className="min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
         >
-          View All
+          View All ({entries.length})
         </button>
       </div>
 
@@ -52,10 +59,10 @@ export const GameLeaderboardPanel: React.FC<GameLeaderboardPanelProps> = ({
           Complete a puzzle to record the first score on the leaderboard.
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[260px] overflow-y-auto">
           <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-800/80 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-slate-50 dark:bg-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                 <th className="py-2 px-2.5">Rank</th>
                 <th className="py-2 px-2.5">Player</th>
                 <th className="py-2 px-2.5">Region</th>
@@ -63,7 +70,7 @@ export const GameLeaderboardPanel: React.FC<GameLeaderboardPanelProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {entries.slice(0, 6).map((entry) => {
+              {entries.map((entry) => {
                 const isYou = entry.playerId === playerEntry.playerId;
                 return (
                   <tr
@@ -86,13 +93,18 @@ export const GameLeaderboardPanel: React.FC<GameLeaderboardPanelProps> = ({
                         #{entry.rank}
                       </span>
                     </td>
-                    <td className="py-2 px-2.5 truncate max-w-[110px]">
+                    <td className="py-2 px-2.5 truncate max-w-[120px]">
                       <span className="text-slate-900 dark:text-white">
                         {entry.playerName}
                       </span>
                       {isYou && (
                         <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-600 text-white">
                           You
+                        </span>
+                      )}
+                      {entry.isPlaying && !isYou && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                          Playing
                         </span>
                       )}
                     </td>

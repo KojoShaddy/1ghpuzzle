@@ -52,14 +52,20 @@ export const LeaderboardDialog: React.FC<LeaderboardDialogProps> = ({
               <Trophy className="w-5 h-5" />
             </div>
             <div>
-              <h2
-                id="leaderboard-dialog-title"
-                className="font-display font-bold text-xl text-slate-900 dark:text-white"
-              >
-                Global Leaderboard
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2
+                  id="leaderboard-dialog-title"
+                  className="font-display font-bold text-xl text-slate-900 dark:text-white"
+                >
+                  Global Leaderboard
+                </h2>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Session
+                </span>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Cumulative points and global rankings across all completed puzzles
+                Real-time cumulative points and global rankings for all players in the session
               </p>
             </div>
           </div>
@@ -156,6 +162,12 @@ export const LeaderboardDialog: React.FC<LeaderboardDialogProps> = ({
                       {isYou && (
                         <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-600 text-white">
                           You
+                        </span>
+                      )}
+                      {entry.isPlaying && (
+                        <span className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          Playing
                         </span>
                       )}
                     </td>

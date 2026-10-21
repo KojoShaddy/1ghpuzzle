@@ -88,8 +88,9 @@ export const GameControls: React.FC<GameControlsProps> = ({
           id="control-preview-btn"
           type="button"
           onClick={onToggleReferenceOverlay}
+          disabled={status !== 'playing'}
           aria-pressed={showReferenceOverlay}
-          className={`min-h-[44px] px-3 py-2.5 rounded-xl font-semibold text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+          className={`min-h-[44px] px-3 py-2.5 rounded-xl font-semibold text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50 disabled:pointer-events-none ${
             showReferenceOverlay
               ? 'bg-amber-500 text-slate-950 shadow-sm'
               : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700'

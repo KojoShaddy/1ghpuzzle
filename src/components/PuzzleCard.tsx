@@ -64,7 +64,7 @@ export const PuzzleCard: React.FC<PuzzleCardProps> = ({
             loading="lazy"
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
-            className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+            className={`w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105 ${
               imageLoaded ? 'opacity-100' : 'opacity-0'
             }`}
           />

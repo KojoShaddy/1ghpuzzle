@@ -138,7 +138,7 @@ export const PuzzleBoard: React.FC<PuzzleBoardProps> = React.memo(
               }}
               className={`w-full h-full grid rounded-xl overflow-hidden bg-slate-950/60 ${
                 status === 'won' ? 'gap-0' : 'gap-[1px]'
-              }`}
+              } ${status === 'paused' ? 'invisible pointer-events-none' : ''}`}
             >
               {tiles.map((tile, index) => (
                 <PuzzleTile
@@ -184,7 +184,7 @@ export const PuzzleBoard: React.FC<PuzzleBoardProps> = React.memo(
               <img
                 src={image.src}
                 alt={`Original reference for ${image.title}`}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-fill"
               />
               <div className="absolute bottom-3 inset-x-3 flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-950/85 text-white text-xs font-semibold backdrop-blur-md">
                 <span className="inline-flex items-center gap-1.5">
@@ -200,7 +200,7 @@ export const PuzzleBoard: React.FC<PuzzleBoardProps> = React.memo(
           {status === 'paused' && (
             <div
               id="pause-overlay"
-              className="absolute inset-0 z-30 rounded-2xl bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-white animate-pop-in"
+              className="absolute inset-0 z-40 rounded-2xl bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white animate-pop-in"
             >
               <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 mb-3">
                 <Play className="w-7 h-7 fill-current ml-0.5" />

@@ -5,6 +5,7 @@ export interface PuzzleImage {
   title: string;
   category: string;
   subtitle: string;
+  description: string;
 }
 
 export interface PuzzleTileData {
@@ -51,6 +52,7 @@ export interface LeaderboardEntry {
   bestTimeSeconds: number | null;
   rank: number;
   updatedAt: string;
+  isPlaying?: boolean;
 }
 
 export interface LeaderboardState {

@@ -8,13 +8,17 @@ import {
 import {
   calculateTimeScore,
   computeRankedLeaderboard,
+  createPlayerIdFromProfile,
   getScoringTierForTime,
   validateSolvedBoard,
 } from '../shared/scoring';
 
-const PLAYER_ID_STORAGE_KEY = 'ghana-puzzle-player-id-v3';
-const FALLBACK_PLAYERS_STORAGE_KEY = 'ghana-puzzle-leaderboard-entries-v3';
-const COMPLETED_SESSIONS_STORAGE_KEY = 'ghana-puzzle-completed-sessions-v3';
+const PLAYER_ID_STORAGE_KEY = 'ghana-puzzle-player-id-v4';
+const FALLBACK_PLAYERS_STORAGE_KEY = 'ghana-puzzle-leaderboard-entries-v4';
+const COMPLETED_SESSIONS_STORAGE_KEY = 'ghana-puzzle-completed-sessions-v4';
+const LEADERBOARD_BROADCAST_CHANNEL = 'ghana-puzzle-leaderboard-sync-v4';
+
+export { createPlayerIdFromProfile };
 
 export function getOrCreatePlayerId(): string {
   if (typeof window === 'undefined') return 'player-local';
@@ -29,6 +33,19 @@ export function getOrCreatePlayerId(): string {
     return generated;
   } catch {
     return 'player-local';
+  }
+}
+
+function notifyCrossTabLeaderboardChange(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel(LEADERBOARD_BROADCAST_CHANNEL);
+      bc.postMessage({ type: 'leaderboard_update', timestamp: Date.now() });
+      bc.close();
+    }
+  } catch {
+    // Ignore BroadcastChannel errors
   }
 }
 
@@ -73,6 +90,15 @@ function saveFallbackPlayerEntry(entry: Omit<LeaderboardEntry, 'rank'>): void {
   }
 }
 
+function saveFallbackLeaderboardEntries(entries: LeaderboardEntry[]): void {
+  try {
+    if (!Array.isArray(entries)) return;
+    window.localStorage.setItem(FALLBACK_PLAYERS_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // Ignore storage error
+  }
+}
+
 export async function registerPlayerProfile(
   profile: PlayerProfile
 ): Promise<LeaderboardState> {
@@ -88,7 +114,8 @@ export async function registerPlayerProfile(
     });
     if (res.ok) {
       const data = (await res.json()) as LeaderboardState;
-      saveFallbackPlayerEntry(data.playerEntry);
+      saveFallbackLeaderboardEntries(data.entries);
+      notifyCrossTabLeaderboardChange();
       return data;
     }
   } catch {
@@ -96,6 +123,7 @@ export async function registerPlayerProfile(
   }
   const fallback = getFallbackLeaderboardState(profile);
   saveFallbackPlayerEntry(fallback.playerEntry);
+  notifyCrossTabLeaderboardChange();
   return fallback;
 }
 
@@ -114,7 +142,7 @@ export async function fetchGlobalLeaderboard(
     });
     if (res.ok) {
       const data = (await res.json()) as LeaderboardState;
-      saveFallbackPlayerEntry(data.playerEntry);
+      saveFallbackLeaderboardEntries(data.entries);
       return data;
     }
   } catch {
@@ -123,10 +151,73 @@ export async function fetchGlobalLeaderboard(
   return getFallbackLeaderboardState(profile);
 }
 
+/**
+ * Subscribes to live session leaderboard updates via SSE (/api/leaderboard/stream),
+ * cross-tab BroadcastChannel, localStorage events, and periodic polling fallback.
+ */
+export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+
+  let eventSource: EventSource | null = null;
+  let broadcastChannel: BroadcastChannel | null = null;
+
+  try {
+    if (typeof EventSource !== 'undefined') {
+      eventSource = new EventSource('/api/leaderboard/stream');
+      eventSource.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data) as { type?: string };
+          if (parsed.type === 'leaderboard_update') {
+            onShouldRefresh();
+          }
+        } catch {
+          onShouldRefresh();
+        }
+      };
+    }
+  } catch {
+    // Ignore EventSource error
+  }
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      broadcastChannel = new BroadcastChannel(LEADERBOARD_BROADCAST_CHANNEL);
+      broadcastChannel.onmessage = () => {
+        onShouldRefresh();
+      };
+    }
+  } catch {
+    // Ignore BroadcastChannel error
+  }
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === FALLBACK_PLAYERS_STORAGE_KEY) {
+      onShouldRefresh();
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
+  const pollInterval = window.setInterval(() => {
+    onShouldRefresh();
+  }, 4000);
+
+  return () => {
+    window.clearInterval(pollInterval);
+    window.removeEventListener('storage', handleStorage);
+    if (eventSource) {
+      eventSource.close();
+    }
+    if (broadcastChannel) {
+      broadcastChannel.close();
+    }
+  };
+}
+
 export async function startServerPuzzleSession(params: {
   profile: PlayerProfile;
   imageId: string;
   gridSize: number;
+  initialTiles?: PuzzleTileData[];
 }): Promise<{ sessionId: string; leaderboard: LeaderboardState }> {
   try {
     const res = await fetch('/api/puzzle/start', {
@@ -138,6 +229,7 @@ export async function startServerPuzzleSession(params: {
         region: params.profile.region,
         imageId: params.imageId,
         gridSize: params.gridSize,
+        initialTiles: params.initialTiles,
       }),
     });
     if (res.ok) {
@@ -145,6 +237,8 @@ export async function startServerPuzzleSession(params: {
         sessionId: string;
         leaderboard: LeaderboardState;
       };
+      saveFallbackLeaderboardEntries(data.leaderboard.entries);
+      notifyCrossTabLeaderboardChange();
       return data;
     }
   } catch {
@@ -237,7 +331,8 @@ export async function completeServerPuzzleSession(params: {
     if (res.ok) {
       const result = (await res.json()) as ScoreSubmissionResult;
       saveLocalCompletedSession(params.sessionId, result);
-      saveFallbackPlayerEntry(result.leaderboard.playerEntry);
+      saveFallbackLeaderboardEntries(result.leaderboard.entries);
+      notifyCrossTabLeaderboardChange();
       return result;
     }
   } catch {
@@ -253,7 +348,7 @@ export async function completeServerPuzzleSession(params: {
     beforeState.playerEntry.puzzlesSolved > 0 ? beforeState.playerEntry.rank : null;
 
   const updatedPlayer: Omit<LeaderboardEntry, 'rank'> = {
-    playerId: params.profile.playerId,
+    playerId: beforeState.playerEntry.playerId,
     playerName: params.profile.name,
     region: params.profile.region,
     cumulativeScore: beforeState.playerEntry.cumulativeScore + pointsAwarded,
@@ -266,6 +361,7 @@ export async function completeServerPuzzleSession(params: {
   };
 
   saveFallbackPlayerEntry(updatedPlayer);
+  notifyCrossTabLeaderboardChange();
   const updatedLeaderboard = getFallbackLeaderboardState(params.profile);
 
   const fallbackResult: ScoreSubmissionResult = {

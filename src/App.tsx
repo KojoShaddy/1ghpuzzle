@@ -100,6 +100,7 @@ export const App: React.FC = () => {
         <div className="flex-1 flex flex-col justify-center">
           <PlayerRegistration
             initialProfile={game.playerProfile}
+            sessionPlayers={game.leaderboard.entries}
             onCompleteRegistration={game.registerPlayer}
           />
         </div>
@@ -111,7 +112,7 @@ export const App: React.FC = () => {
             playerProfile={game.playerProfile}
             onSelectImage={(img) => game.selectImage(img, false)}
             onStartGame={game.startGame}
-            onOpenRules={() => setIsRulesOpen(true)}
+            onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
             onEditProfile={game.openProfileEditor}
           />
         </div>
