@@ -9,6 +9,7 @@ import {
   RotateCcw,
   TrendingUp,
   Trophy,
+  X,
 } from 'lucide-react';
 import { PuzzleImage, ScoreSubmissionResult } from '../types/puzzle';
 import { calculateTimeScore, getScoringTierForTime } from '../shared/scoring';
@@ -21,6 +22,7 @@ interface VictoryDialogProps {
   elapsedSeconds: number;
   isNewRecord: boolean;
   scoreResult: ScoreSubmissionResult | null;
+  onClose: () => void;
   onPlayAgain: () => void;
   onNextPuzzle: () => void;
   onChooseAnother: () => void;
@@ -34,6 +36,7 @@ export const VictoryDialog: React.FC<VictoryDialogProps> = ({
   elapsedSeconds,
   isNewRecord,
   scoreResult,
+  onClose,
   onPlayAgain,
   onNextPuzzle,
   onChooseAnother,
@@ -72,14 +75,30 @@ export const VictoryDialog: React.FC<VictoryDialogProps> = ({
       ref={dialogRef}
       id="victory-dialog"
       aria-labelledby="victory-title"
+      onClose={onClose}
       onCancel={(e) => {
         e.preventDefault();
-        onPlayAgain();
+        onClose();
       }}
-      className="m-auto w-[calc(100%-1.5rem)] max-w-md rounded-3xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-0 border border-slate-200 dark:border-slate-800 shadow-xl animate-pop-in"
+      onClick={(e) => {
+        if (e.target === dialogRef.current) {
+          onClose();
+        }
+      }}
+      className="m-auto w-[calc(100%-1.5rem)] max-w-md rounded-3xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-0 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden animate-pop-in"
     >
       {/* Top Celebration Banner */}
       <div className="relative bg-emerald-700 p-5 sm:p-6 text-center text-white overflow-hidden">
+        <button
+          id="close-victory-x-btn"
+          type="button"
+          onClick={onClose}
+          aria-label="Close puzzle completed dialog"
+          className="absolute top-3.5 right-3.5 min-w-[40px] min-h-[40px] rounded-xl inline-flex items-center justify-center text-emerald-100 hover:text-white bg-emerald-800/60 hover:bg-emerald-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white cursor-pointer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-800 mb-2.5">
           <Trophy className="w-8 h-8 text-amber-300" />
         </div>

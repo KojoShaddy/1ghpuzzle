@@ -130,7 +130,16 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
       });
     };
 
-    refreshLeaderboard();
+    // If a returning participant already has a registered profile, announce them to the live session immediately
+    if (playerProfile && playerProfile.name.trim().length >= 2) {
+      void registerPlayerProfile(playerProfile).then((state) => {
+        if (!active) return;
+        setLeaderboard(state);
+      });
+    } else {
+      refreshLeaderboard();
+    }
+
     const unsubscribe = subscribeToLiveLeaderboard(refreshLeaderboard);
 
     return () => {
@@ -150,7 +159,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
 
       // Abandon any active puzzle session belonging to the previous player before switching
       if (sessionIdRef.current && statusRef.current !== 'won') {
-        void abandonServerPuzzleSession(sessionIdRef.current);
+        void abandonServerPuzzleSession(sessionIdRef.current, activeProfile);
         sessionIdRef.current = null;
       }
       setStatus('idle');
@@ -178,7 +187,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
         }
       });
     },
-    [setPlayerProfile]
+    [setPlayerProfile, activeProfile]
   );
 
   /**
@@ -187,14 +196,18 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const openProfileEditor = useCallback(() => {
     setStatus((prev) => {
       if (prev === 'playing') {
-        void pauseServerPuzzleSession(sessionIdRef.current);
+        void pauseServerPuzzleSession(sessionIdRef.current, activeProfile);
         return 'paused';
+      }
+      if (prev === 'won') {
+        statusRef.current = 'idle';
+        return 'idle';
       }
       return prev;
     });
     setSelectedTileId(null);
     setScreen('welcome');
-  }, []);
+  }, [activeProfile]);
 
   /**
    * Starts a fresh server-tracked puzzle session and resets monotonic timer.
@@ -204,7 +217,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
       // Abandon any prior active session so it cannot award points
       const previousSessionId = sessionIdRef.current;
       if (previousSessionId && statusRef.current !== 'won') {
-        void abandonServerPuzzleSession(previousSessionId);
+        void abandonServerPuzzleSession(previousSessionId, activeProfile);
       }
 
       sessionIdRef.current = null;
@@ -287,27 +300,27 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const togglePause = useCallback(() => {
     setStatus((prev) => {
       if (prev === 'playing') {
-        void pauseServerPuzzleSession(sessionIdRef.current);
+        void pauseServerPuzzleSession(sessionIdRef.current, activeProfile);
         return 'paused';
       }
       if (prev === 'paused') {
-        void resumeServerPuzzleSession(sessionIdRef.current);
+        void resumeServerPuzzleSession(sessionIdRef.current, activeProfile);
         return 'playing';
       }
       return prev;
     });
     setSelectedTileId(null);
-  }, []);
+  }, [activeProfile]);
 
   const resumeGame = useCallback(() => {
     setStatus((prev) => {
       if (prev === 'paused') {
-        void resumeServerPuzzleSession(sessionIdRef.current);
+        void resumeServerPuzzleSession(sessionIdRef.current, activeProfile);
         return 'playing';
       }
       return prev;
     });
-  }, []);
+  }, [activeProfile]);
 
   /**
    * Navigates back to the gallery screen and pauses any active game.
@@ -315,14 +328,18 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const goToGallery = useCallback(() => {
     setStatus((prev) => {
       if (prev === 'playing') {
-        void pauseServerPuzzleSession(sessionIdRef.current);
+        void pauseServerPuzzleSession(sessionIdRef.current, activeProfile);
         return 'paused';
+      }
+      if (prev === 'won') {
+        statusRef.current = 'idle';
+        return 'idle';
       }
       return prev;
     });
     setSelectedTileId(null);
     setScreen(playerProfile ? 'gallery' : 'welcome');
-  }, [playerProfile]);
+  }, [playerProfile, activeProfile]);
 
   /**
    * Swaps two tiles on the board and checks for puzzle completion.

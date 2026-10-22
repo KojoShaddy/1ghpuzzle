@@ -480,8 +480,68 @@ export function createScoringMiddleware() {
         const playerId = String(urlObj.searchParams.get('playerId') || '').slice(0, 80);
         const playerName = sanitizePlayerName(urlObj.searchParams.get('playerName')) || 'Player';
         const region = sanitizeRegion(urlObj.searchParams.get('region'));
+
+        if (playerName.length >= 2 && playerName.toLowerCase() !== 'player') {
+          const hadBefore = playersMap.size;
+          resolveOrCreatePlayer(playersMap, playerId, playerName, region);
+          if (playersMap.size !== hadBefore) {
+            savePlayersMap(playersMap);
+            broadcastLeaderboardUpdate();
+          }
+        }
+
         const state = buildLeaderboardState(playersMap, sessions, playerId, playerName, region);
         return sendJson(res, 200, state);
+      }
+
+      // POST /api/leaderboard/sync
+      if (req.method === 'POST' && pathname === '/api/leaderboard/sync') {
+        const body = await readJsonBody(req);
+        const incoming = Array.isArray(body.entries) ? body.entries.slice(0, 200) : [];
+        let changed = false;
+
+        for (const item of incoming) {
+          if (!item || typeof item !== 'object') continue;
+          const cleanName = sanitizePlayerName(item.playerName);
+          if (!cleanName || cleanName.length < 2 || cleanName.toLowerCase() === 'player') {
+            continue;
+          }
+          const cleanRegion = sanitizeRegion(item.region);
+          const existing = resolveOrCreatePlayer(
+            playersMap,
+            String(item.playerId || ''),
+            cleanName,
+            cleanRegion
+          );
+          const incomingScore = Math.max(0, Math.floor(Number(item.cumulativeScore) || 0));
+          const incomingSolved = Math.max(0, Math.floor(Number(item.puzzlesSolved) || 0));
+          const incomingBest =
+            typeof item.bestTimeSeconds === 'number' && item.bestTimeSeconds > 0
+              ? Math.floor(item.bestTimeSeconds)
+              : null;
+
+          if (incomingScore > existing.cumulativeScore) {
+            existing.cumulativeScore = incomingScore;
+            changed = true;
+          }
+          if (incomingSolved > existing.puzzlesSolved) {
+            existing.puzzlesSolved = incomingSolved;
+            changed = true;
+          }
+          if (
+            incomingBest !== null &&
+            (existing.bestTimeSeconds === null || incomingBest < existing.bestTimeSeconds)
+          ) {
+            existing.bestTimeSeconds = incomingBest;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          savePlayersMap(playersMap);
+          broadcastLeaderboardUpdate();
+        }
+        return sendJson(res, 200, { synced: true, totalPlayers: playersMap.size });
       }
 
       // POST /api/player/register

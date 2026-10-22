@@ -30,6 +30,7 @@ export const App: React.FC = () => {
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [showReferenceOverlay, setShowReferenceOverlay] = useState(false);
+  const [isVictoryDismissed, setIsVictoryDismissed] = useState(false);
 
   const game = usePuzzleGame({
     soundEnabled: preferences.soundEnabled,
@@ -46,9 +47,12 @@ export const App: React.FC = () => {
     }
   }, [preferences.theme]);
 
-  // Reset reference overlay when changing image or restarting
+  // Reset reference overlay and victory dialog dismissal when changing image or status
   useEffect(() => {
     setShowReferenceOverlay(false);
+    if (game.status !== 'won') {
+      setIsVictoryDismissed(false);
+    }
   }, [game.selectedImage.id, game.status]);
 
   const handleToggleTheme = useCallback(() => {
@@ -216,12 +220,13 @@ export const App: React.FC = () => {
 
       {/* Victory Celebration Modal */}
       <VictoryDialog
-        isOpen={game.status === 'won'}
+        isOpen={game.status === 'won' && game.screen === 'game' && !isVictoryDismissed}
         image={game.selectedImage}
         moves={game.moves}
         elapsedSeconds={game.elapsedSeconds}
         isNewRecord={game.isNewRecord}
         scoreResult={game.lastScoreResult}
+        onClose={() => setIsVictoryDismissed(true)}
         onPlayAgain={game.restartGame}
         onNextPuzzle={game.playNextImage}
         onChooseAnother={game.goToGallery}
