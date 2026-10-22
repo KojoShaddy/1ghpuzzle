@@ -37,9 +37,9 @@ import {
   sanitizeEntry,
 } from './liveSessionSync';
 
-const PLAYER_ID_STORAGE_KEY = 'ghana-puzzle-player-id-v5';
-const LEADERBOARD_BROADCAST_CHANNEL = 'ghana-puzzle-leaderboard-sync-v5';
-const FIRESTORE_LEADERBOARD_COLLECTION = 'leaderboard';
+const PLAYER_ID_STORAGE_KEY = 'ghana-puzzle-player-id-v6';
+const LEADERBOARD_BROADCAST_CHANNEL = 'ghana-puzzle-leaderboard-sync-v6';
+const FIRESTORE_LEADERBOARD_COLLECTION = 'leaderboard_v6';
 
 export { createPlayerIdFromProfile };
 

@@ -5,7 +5,7 @@ export type RawLeaderboardEntry = Omit<LeaderboardEntry, 'rank'> & {
   lastSeenAt?: number;
 };
 
-const TOPIC_PREFIX = '1ghimagepuzzle/v5/session';
+const TOPIC_PREFIX = '1ghimagepuzzle/v6/session';
 const PLAYER_TOPIC_PREFIX = `${TOPIC_PREFIX}/players/`;
 const ROSTER_SNAPSHOT_TOPIC = `${TOPIC_PREFIX}/roster/snapshot`;
 const LIVE_EVENTS_TOPIC = `${TOPIC_PREFIX}/events`;

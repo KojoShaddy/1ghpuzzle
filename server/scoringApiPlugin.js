@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
-const LEADERBOARD_FILE = path.join(DATA_DIR, 'leaderboard-v5.json');
+const LEADERBOARD_FILE = path.join(DATA_DIR, 'leaderboard-v6.json');
 
 const MAX_BODY_BYTES = 32_768; // 32 KB strict request payload cap
 const MAX_SESSIONS_IN_MEMORY = 2_000;

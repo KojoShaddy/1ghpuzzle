@@ -155,7 +155,7 @@ export const registerPlayerProfile = onCall({ cors: true }, async (request) => {
   }
   const region = sanitizeRegion(data.region);
   const playerId = createDeterministicPlayerId(playerName, region);
-  const playerRef = db.collection('leaderboard').doc(playerId);
+  const playerRef = db.collection('leaderboard_v6').doc(playerId);
 
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(playerRef);
@@ -212,7 +212,7 @@ export const startPuzzleSession = onCall({ cors: true }, async (request) => {
   const minRequiredMoves = computeMinimumSwapsForBoard(data.initialTiles, gridSize);
 
   const sessionId = randomUUID();
-  const sessionRef = db.collection('puzzleSessions').doc(sessionId);
+  const sessionRef = db.collection('puzzleSessions_v6').doc(sessionId);
 
   await sessionRef.set({
     sessionId,
@@ -245,7 +245,7 @@ export const pausePuzzleSession = onCall({ cors: true }, async (request) => {
     throw new HttpsError('invalid-argument', 'Missing sessionId');
   }
 
-  const sessionRef = db.collection('puzzleSessions').doc(sessionId);
+  const sessionRef = db.collection('puzzleSessions_v6').doc(sessionId);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(sessionRef);
     if (!snap.exists) return;
@@ -272,7 +272,7 @@ export const resumePuzzleSession = onCall({ cors: true }, async (request) => {
     throw new HttpsError('invalid-argument', 'Missing sessionId');
   }
 
-  const sessionRef = db.collection('puzzleSessions').doc(sessionId);
+  const sessionRef = db.collection('puzzleSessions_v6').doc(sessionId);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(sessionRef);
     if (!snap.exists) return;
@@ -302,7 +302,7 @@ export const abandonPuzzleSession = onCall({ cors: true }, async (request) => {
     return { status: 'abandoned' };
   }
 
-  const sessionRef = db.collection('puzzleSessions').doc(sessionId);
+  const sessionRef = db.collection('puzzleSessions_v6').doc(sessionId);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(sessionRef);
     if (!snap.exists) return;
@@ -343,7 +343,7 @@ export const completePuzzleSession = onCall({ cors: true }, async (request) => {
     );
   }
 
-  const sessionRef = db.collection('puzzleSessions').doc(sessionId);
+  const sessionRef = db.collection('puzzleSessions_v6').doc(sessionId);
 
   return await db.runTransaction(async (tx) => {
     const sessionSnap = await tx.get(sessionRef);
@@ -395,7 +395,7 @@ export const completePuzzleSession = onCall({ cors: true }, async (request) => {
     const playerName = sanitizePlayerName(data.playerName || session.playerName) || 'Player';
     const region = sanitizeRegion(data.region || session.region);
     const playerId = createDeterministicPlayerId(playerName, region);
-    const playerRef = db.collection('leaderboard').doc(playerId);
+    const playerRef = db.collection('leaderboard_v6').doc(playerId);
 
     const playerSnap = await tx.get(playerRef);
     const nowIso = new Date().toISOString();

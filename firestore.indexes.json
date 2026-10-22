@@ -1,7 +1,7 @@
 {
   "indexes": [
     {
-      "collectionGroup": "leaderboard",
+      "collectionGroup": "leaderboard_v6",
       "queryScope": "COLLECTION",
       "fields": [
         {

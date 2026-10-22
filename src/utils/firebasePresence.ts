@@ -27,7 +27,7 @@ export interface LivePresenceSnapshot {
   playingPlayerIds: Set<string>;
 }
 
-const CLIENT_PRESENCE_SESSION_KEY = 'ghana-puzzle-presence-client-id-v5';
+const CLIENT_PRESENCE_SESSION_KEY = 'ghana-puzzle-presence-client-id-v6';
 
 function getOrCreateClientPresenceId(): string {
   if (typeof window === 'undefined') return 'client-server';
@@ -174,11 +174,11 @@ class FirebasePresenceManager {
     const { rtdb } = services;
     // Key by auth UID + tab connection ID so multiple tabs or devices each have accurate disconnect tracking
     const presenceKey = `${user.uid}_${this.clientConnId}`;
-    this.activeRtdbPath = `presence/${presenceKey}`;
+    this.activeRtdbPath = `presence_v6/${presenceKey}`;
 
     const connectedRef = ref(rtdb, '.info/connected');
     const userPresenceRef = ref(rtdb, this.activeRtdbPath);
-    const allPresenceRef = ref(rtdb, 'presence');
+    const allPresenceRef = ref(rtdb, 'presence_v6');
 
     this.connectedUnsub = onValue(connectedRef, async (snap) => {
       const connected = snap.val() === true;

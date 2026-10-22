@@ -6,7 +6,7 @@ rules_version = '2';
 //
 // This security rules file assumes the following data structures:
 //
-// Collection: leaderboard
+// Collection: leaderboard_v6
 // Document ID: {playerId} (deterministic slug "player-<name>-<region>")
 // Fields:
 //   - uid: string (required, immutable after create, 1..128 chars) - Firebase Auth UID of the player
@@ -19,7 +19,7 @@ rules_version = '2';
 //   - updatedAt: string (required, ISO-8601 date string, <= 40 chars) - Client ISO timestamp
 //   - updatedAtServer: timestamp (required, equals request.time) - Server authoritative timestamp
 //
-// Collection: puzzleSessions
+// Collection: puzzleSessions_v6
 // Document ID: {sessionId}
 // Fields:
 //   - uid: string (required, immutable) - Firebase Auth UID of the player
@@ -188,7 +188,7 @@ service cloud.firestore {
     // Collection Rules
     // ===============================================================
 
-    match /leaderboard/{playerId} {
+    match /leaderboard_v6/{playerId} {
       // Authenticated participants (including anonymous auth) can read the global leaderboard
       allow read: if isAuthenticated();
 
@@ -198,7 +198,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /puzzleSessions/{sessionId} {
+    match /puzzleSessions_v6/{sessionId} {
       // Sessions are managed exclusively by trusted Firebase Cloud Functions (Admin SDK)
       allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
       allow write: if false;
