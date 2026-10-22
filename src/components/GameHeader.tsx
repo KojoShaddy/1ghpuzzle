@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   CheckCircle2,
+  Download,
   Grid,
   HelpCircle,
   Moon,
@@ -17,6 +18,8 @@ interface GameHeaderProps {
   hasActiveGame: boolean;
   playerProfile: PlayerProfile | null;
   preferences: UserPreferences;
+  canInstallApp?: boolean;
+  onInstallApp?: () => void;
   onNavigateGallery: () => void;
   onReturnToGame: () => void;
   onEditProfile: () => void;
@@ -31,6 +34,8 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
   hasActiveGame,
   playerProfile,
   preferences,
+  canInstallApp = false,
+  onInstallApp,
   onNavigateGallery,
   onReturnToGame,
   onEditProfile,
@@ -110,6 +115,20 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
               <span className="hidden md:inline text-slate-400">
                 ({playerProfile.region})
               </span>
+            </button>
+          )}
+
+          {canInstallApp && onInstallApp && (
+            <button
+              id="header-install-app-btn"
+              type="button"
+              onClick={onInstallApp}
+              aria-label="Install 1Ghana Puzzle App"
+              title="Install App on Phone or Device"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-display font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            >
+              <Download className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Install App</span>
             </button>
           )}
 

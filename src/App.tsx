@@ -3,6 +3,7 @@ import { Heart } from 'lucide-react';
 import { UserPreferences } from './types/puzzle';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePuzzleGame } from './hooks/usePuzzleGame';
+import { usePwaInstall } from './hooks/usePwaInstall';
 import { GameHeader } from './components/GameHeader';
 import { PlayerRegistration } from './components/PlayerRegistration';
 import { PuzzleGallery } from './components/PuzzleGallery';
@@ -13,6 +14,7 @@ import { GameLeaderboardPanel } from './components/GameLeaderboardPanel';
 import { VictoryDialog } from './components/VictoryDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { LeaderboardDialog } from './components/LeaderboardDialog';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   theme: 'dark',
@@ -32,6 +34,7 @@ export const App: React.FC = () => {
   const game = usePuzzleGame({
     soundEnabled: preferences.soundEnabled,
   });
+  const pwa = usePwaInstall();
 
   // Sync dark/light class with document root
   useEffect(() => {
@@ -87,6 +90,8 @@ export const App: React.FC = () => {
         hasActiveGame={game.status !== 'idle'}
         preferences={preferences}
         playerProfile={game.playerProfile}
+        canInstallApp={!pwa.isInstalled}
+        onInstallApp={pwa.triggerInstall}
         onNavigateGallery={game.goToGallery}
         onReturnToGame={handleReturnToGame}
         onEditProfile={game.openProfileEditor}
@@ -231,6 +236,18 @@ export const App: React.FC = () => {
         isOpen={isLeaderboardOpen}
         leaderboard={game.leaderboard}
         onClose={() => setIsLeaderboardOpen(false)}
+      />
+
+      {/* PWA Installation Prompt Banner & Device Guide */}
+      <PwaInstallPrompt
+        showBanner={pwa.showInstallBanner}
+        canPromptNatively={pwa.canPromptNatively}
+        isIosDevice={pwa.isIosDevice}
+        isAndroidDevice={pwa.isAndroidDevice}
+        isGuideOpen={pwa.isInstallGuideOpen}
+        onTriggerInstall={pwa.triggerInstall}
+        onDismissBanner={pwa.dismissBanner}
+        onCloseGuide={() => pwa.setIsInstallGuideOpen(false)}
       />
     </div>
   );
