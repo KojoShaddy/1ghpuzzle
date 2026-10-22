@@ -11,7 +11,7 @@ export const GameLeaderboardPanel: React.FC<GameLeaderboardPanelProps> = ({
   leaderboard,
   onOpenFullLeaderboard,
 }) => {
-  const { playerEntry, entries } = leaderboard;
+  const { playerEntry, entries, onlineCount = 1 } = leaderboard;
 
   return (
     <section
@@ -32,9 +32,12 @@ export const GameLeaderboardPanel: React.FC<GameLeaderboardPanelProps> = ({
               >
                 Leaderboard
               </h2>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <span
+                id="sidebar-online-badge"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live
+                Live • {Math.max(1, onlineCount)} Online
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">

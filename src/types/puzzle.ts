@@ -59,6 +59,7 @@ export interface LeaderboardState {
   playerEntry: LeaderboardEntry;
   totalPlayers: number;
   entries: LeaderboardEntry[];
+  onlineCount?: number;
 }
 
 export interface ScoreSubmissionResult {

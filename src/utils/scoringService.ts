@@ -1,4 +1,22 @@
 import {
+  collection,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  Unsubscribe,
+} from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import {
+  ensureAnonymousAuth,
+  getFirebaseServices,
+  isCloudFunctionsEnabled,
+} from '../lib/firebase';
+import {
   LeaderboardState,
   PlayerProfile,
   PuzzleTileData,
@@ -11,6 +29,7 @@ import {
   getScoringTierForTime,
   validateSolvedBoard,
 } from '../shared/scoring';
+import { firebasePresence } from './firebasePresence';
 import {
   liveSessionSync,
   mergeTwoPlayerEntries,
@@ -19,11 +38,14 @@ import {
 } from './liveSessionSync';
 
 const PLAYER_ID_STORAGE_KEY = 'ghana-puzzle-player-id-v4';
-const FALLBACK_PLAYERS_STORAGE_KEY = 'ghana-puzzle-leaderboard-entries-v4';
-const COMPLETED_SESSIONS_STORAGE_KEY = 'ghana-puzzle-completed-sessions-v4';
 const LEADERBOARD_BROADCAST_CHANNEL = 'ghana-puzzle-leaderboard-sync-v4';
+const FIRESTORE_LEADERBOARD_COLLECTION = 'leaderboard';
 
 export { createPlayerIdFromProfile };
+
+// In-memory cache of remote leaderboard entries from Cloud Firestore & backend API (never stored exclusively in localStorage)
+const remoteEntriesMemoryCache = new Map<string, RawLeaderboardEntry>();
+const completedSessionIdsMemory = new Map<string, ScoreSubmissionResult>();
 
 function isJsonResponse(res: Response): boolean {
   const contentType = res.headers.get('content-type') || '';
@@ -59,55 +81,46 @@ function notifyCrossTabLeaderboardChange(): void {
   }
 }
 
-function getLocalCompletedSessions(): Record<string, ScoreSubmissionResult> {
-  try {
-    const raw = window.localStorage.getItem(COMPLETED_SESSIONS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, ScoreSubmissionResult>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveLocalCompletedSession(sessionId: string, result: ScoreSubmissionResult): void {
-  try {
-    const map = getLocalCompletedSessions();
-    map[sessionId] = result;
-    window.localStorage.setItem(COMPLETED_SESSIONS_STORAGE_KEY, JSON.stringify(map));
-  } catch {
-    // Ignore storage error
-  }
-}
-
-function loadStoredEntries(): RawLeaderboardEntry[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(FALLBACK_PLAYERS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    const out: RawLeaderboardEntry[] = [];
-    for (const item of parsed) {
-      const sanitized = sanitizeEntry(item);
-      if (sanitized) out.push(sanitized);
+function upsertRemoteCacheEntries(entries: unknown[]): void {
+  for (const raw of entries) {
+    const sanitized = sanitizeEntry(raw);
+    if (!sanitized) continue;
+    const existing = remoteEntriesMemoryCache.get(sanitized.playerId);
+    if (!existing) {
+      remoteEntriesMemoryCache.set(sanitized.playerId, sanitized);
+    } else {
+      remoteEntriesMemoryCache.set(
+        sanitized.playerId,
+        mergeTwoPlayerEntries(existing, sanitized)
+      );
     }
-    return out;
-  } catch {
-    return [];
   }
 }
 
 /**
- * Merges multiple lists of leaderboard entries without ever losing or downgrading any participant.
+ * Merges Cloud Firestore entries, backend API entries, and live session entries,
+ * enriched with real-time presence (`isPlaying` and `onlineCount`) from Firebase Realtime Database.
  */
-function mergeAllEntries(
-  ...entryLists: Array<Array<unknown> | undefined>
-): RawLeaderboardEntry[] {
+function buildUnifiedLeaderboardState(
+  profile: PlayerProfile,
+  additionalEntries?: unknown[]
+): LeaderboardState {
+  if (additionalEntries) {
+    upsertRemoteCacheEntries(additionalEntries);
+    liveSessionSync.mergeExternalEntries(additionalEntries);
+  }
+
+  const presenceSnap = firebasePresence.getSnapshot();
   const mergedMap = new Map<string, RawLeaderboardEntry>();
 
-  for (const list of entryLists) {
-    if (!Array.isArray(list)) continue;
-    for (const rawItem of list) {
-      const sanitized = sanitizeEntry(rawItem);
+  const allSources = [
+    Array.from(remoteEntriesMemoryCache.values()),
+    liveSessionSync.getEntries(),
+  ];
+
+  for (const list of allSources) {
+    for (const item of list) {
+      const sanitized = sanitizeEntry(item);
       if (!sanitized) continue;
       const existing = mergedMap.get(sanitized.playerId);
       if (!existing) {
@@ -118,39 +131,150 @@ function mergeAllEntries(
     }
   }
 
-  return Array.from(mergedMap.values());
+  // Also include online participants from Firebase RTDB presence who have registered a valid name
+  for (const p of presenceSnap.participants) {
+    if (
+      p.playerName &&
+      p.playerName.trim().length >= 2 &&
+      p.playerName.toLowerCase() !== 'guest player' &&
+      p.playerName.toLowerCase() !== 'player'
+    ) {
+      const canonicalId = createPlayerIdFromProfile(p.playerName, p.region);
+      if (!mergedMap.has(canonicalId)) {
+        mergedMap.set(canonicalId, {
+          playerId: canonicalId,
+          playerName: p.playerName.trim(),
+          region: p.region.trim() || 'Greater Accra',
+          cumulativeScore: 0,
+          puzzlesSolved: 0,
+          bestTimeSeconds: null,
+          updatedAt: new Date().toISOString(),
+          isPlaying: p.isPlaying,
+          lastSeenAt: Date.now(),
+        });
+      }
+    }
+  }
+
+  // Overlay live RTDB playing status
+  for (const [playerId, entry] of mergedMap.entries()) {
+    if (presenceSnap.playingPlayerIds.has(playerId)) {
+      mergedMap.set(playerId, { ...entry, isPlaying: true });
+    }
+  }
+
+  const ranked = computeRankedLeaderboard(
+    Array.from(mergedMap.values()),
+    profile.playerId,
+    profile.name,
+    profile.region
+  );
+
+  return {
+    ...ranked,
+    onlineCount: Math.max(presenceSnap.onlineCount, ranked.entries.length > 0 ? 1 : 0),
+  };
 }
 
 /**
- * Combines localStorage entries, live WebSocket/MQTT session entries, and any newly supplied entries,
- * persists the merged set back to both localStorage and liveSessionSync, and returns the unified list.
+ * Queries Cloud Firestore `leaderboard` collection sorted by `cumulativeScore` descending.
  */
-function getAndPersistMergedEntries(additionalEntries?: unknown[]): RawLeaderboardEntry[] {
-  const stored = loadStoredEntries();
-  const live = liveSessionSync.getEntries();
-  const unified = mergeAllEntries(stored, live, additionalEntries);
+async function fetchFirestoreLeaderboardEntries(): Promise<RawLeaderboardEntry[]> {
+  const services = getFirebaseServices();
+  if (!services) return [];
 
   try {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(FALLBACK_PLAYERS_STORAGE_KEY, JSON.stringify(unified));
-    }
+    await ensureAnonymousAuth();
+    const leaderboardQuery = query(
+      collection(services.db, FIRESTORE_LEADERBOARD_COLLECTION),
+      orderBy('cumulativeScore', 'desc'),
+      limit(100)
+    );
+    const snap = await getDocs(leaderboardQuery);
+    const entries: RawLeaderboardEntry[] = [];
+    snap.forEach((docSnap) => {
+      const sanitized = sanitizeEntry({
+        playerId: docSnap.id,
+        ...docSnap.data(),
+      });
+      if (sanitized) {
+        entries.push(sanitized);
+      }
+    });
+    upsertRemoteCacheEntries(entries);
+    return entries;
   } catch {
-    // Ignore storage quota error
+    return [];
   }
-
-  liveSessionSync.mergeExternalEntries(unified);
-  return unified;
 }
 
-function getUnifiedLeaderboardState(
-  profile: PlayerProfile,
-  additionalEntries?: unknown[]
-): LeaderboardState {
-  const unified = getAndPersistMergedEntries(additionalEntries);
-  return computeRankedLeaderboard(unified, profile.playerId, profile.name, profile.region);
+/**
+ * Upserts a player profile in Cloud Firestore `leaderboard/{playerId}` using a transaction
+ * so an existing player's cumulativeScore is never overwritten.
+ */
+async function upsertFirestorePlayerProfile(profile: PlayerProfile): Promise<void> {
+  const services = getFirebaseServices();
+  if (!services) return;
+
+  const cleanName = profile.name.trim();
+  if (cleanName.length < 2 || cleanName.toLowerCase() === 'player') return;
+  const cleanRegion = profile.region.trim() || 'Greater Accra';
+  const canonicalId = createPlayerIdFromProfile(cleanName, cleanRegion);
+
+  try {
+    const user = await ensureAnonymousAuth();
+    if (!user) return;
+
+    // 1. Try Firebase Cloud Function first only if enabled (Blaze plan)
+    if (isCloudFunctionsEnabled()) {
+      try {
+        const registerFn = httpsCallable(services.functions, 'registerPlayerProfile');
+        await registerFn({
+          playerId: canonicalId,
+          playerName: cleanName,
+          region: cleanRegion,
+        });
+        return;
+      } catch {
+        // Fallback to direct Firestore transaction
+      }
+    }
+
+    const playerRef = doc(services.db, FIRESTORE_LEADERBOARD_COLLECTION, canonicalId);
+    await runTransaction(services.db, async (tx) => {
+      const snap = await tx.get(playerRef);
+      const nowIso = new Date().toISOString();
+      if (!snap.exists()) {
+        tx.set(playerRef, {
+          uid: user.uid,
+          playerId: canonicalId,
+          playerName: cleanName,
+          region: cleanRegion,
+          cumulativeScore: 0,
+          puzzlesSolved: 0,
+          bestTimeSeconds: null,
+          updatedAt: nowIso,
+          updatedAtServer: serverTimestamp(),
+        });
+      } else {
+        const data = snap.data();
+        if (!data.uid || data.uid === user.uid) {
+          tx.update(playerRef, {
+            uid: user.uid,
+            playerName: cleanName,
+            region: cleanRegion,
+            updatedAt: nowIso,
+            updatedAtServer: serverTimestamp(),
+          });
+        }
+      }
+    });
+  } catch {
+    // Ignore Firestore error when unconfigured
+  }
 }
 
-async function syncEntriesWithLocalServer(entries: RawLeaderboardEntry[]): Promise<void> {
+async function syncEntriesWithBackendServer(entries: RawLeaderboardEntry[]): Promise<void> {
   if (entries.length === 0) return;
   try {
     await fetch('/api/leaderboard/sync', {
@@ -159,28 +283,30 @@ async function syncEntriesWithLocalServer(entries: RawLeaderboardEntry[]): Promi
       body: JSON.stringify({ entries }),
     });
   } catch {
-    // Ignore when running on static hosting without local server
+    // Ignore if backend route is unavailable
   }
 }
 
 export async function registerPlayerProfile(
   profile: PlayerProfile
 ): Promise<LeaderboardState> {
-  liveSessionSync.init(loadStoredEntries());
+  liveSessionSync.init();
 
   const cleanName = profile.name.trim();
   const cleanRegion = profile.region.trim() || 'Greater Accra';
   const canonicalId = createPlayerIdFromProfile(cleanName, cleanRegion);
-
-  // Immediately merge & publish this participant to the live cross-device session
-  const currentState = getUnifiedLeaderboardState({
+  const normalizedProfile: PlayerProfile = {
     playerId: canonicalId,
     name: cleanName,
     region: cleanRegion,
-  });
+  };
 
+  firebasePresence.init(normalizedProfile, false);
+  void upsertFirestorePlayerProfile(normalizedProfile);
+
+  const initialState = buildUnifiedLeaderboardState(normalizedProfile);
   liveSessionSync.publishPlayerEntry({
-    ...currentState.playerEntry,
+    ...initialState.playerEntry,
     playerId: canonicalId,
     playerName: cleanName,
     region: cleanRegion,
@@ -188,88 +314,128 @@ export async function registerPlayerProfile(
   });
   notifyCrossTabLeaderboardChange();
 
-  try {
-    const res = await fetch('/api/player/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        playerId: canonicalId,
-        playerName: cleanName,
-        region: cleanRegion,
-      }),
-    });
-    if (isJsonResponse(res)) {
-      const serverData = (await res.json()) as LeaderboardState;
-      const mergedState = getUnifiedLeaderboardState(
-        {
-          playerId: canonicalId,
-          name: cleanName,
-          region: cleanRegion,
-        },
-        serverData.entries
-      );
-      liveSessionSync.publishPlayerEntry({
-        ...mergedState.playerEntry,
-        lastSeenAt: Date.now(),
-      });
-      void syncEntriesWithLocalServer(mergedState.entries);
-      notifyCrossTabLeaderboardChange();
-      return mergedState;
-    }
-  } catch {
-    // Running on static host or offline; live WebSocket/MQTT + local state already updated
-  }
+  // Fetch latest Firestore entries in parallel with backend /api/player/register
+  const [firestoreEntries] = await Promise.all([
+    fetchFirestoreLeaderboardEntries(),
+    (async () => {
+      try {
+        const res = await fetch('/api/player/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            playerId: canonicalId,
+            playerName: cleanName,
+            region: cleanRegion,
+          }),
+        });
+        if (isJsonResponse(res)) {
+          const serverData = (await res.json()) as LeaderboardState;
+          upsertRemoteCacheEntries(serverData.entries);
+        }
+      } catch {
+        // Ignore network error
+      }
+    })(),
+  ]);
 
-  return getUnifiedLeaderboardState({
-    playerId: canonicalId,
-    name: cleanName,
-    region: cleanRegion,
+  const finalState = buildUnifiedLeaderboardState(normalizedProfile, firestoreEntries);
+  liveSessionSync.publishPlayerEntry({
+    ...finalState.playerEntry,
+    lastSeenAt: Date.now(),
   });
+  void syncEntriesWithBackendServer(finalState.entries);
+  notifyCrossTabLeaderboardChange();
+
+  return finalState;
 }
 
 export async function fetchGlobalLeaderboard(
   profile: PlayerProfile
 ): Promise<LeaderboardState> {
-  liveSessionSync.init(loadStoredEntries());
+  liveSessionSync.init();
 
-  try {
-    const query = new URLSearchParams({
-      playerId: profile.playerId,
-      playerName: profile.name,
-      region: profile.region,
-    });
-    const res = await fetch(`/api/leaderboard?${query.toString()}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    if (isJsonResponse(res)) {
-      const serverData = (await res.json()) as LeaderboardState;
-      const mergedState = getUnifiedLeaderboardState(profile, serverData.entries);
-      if (mergedState.entries.length > serverData.entries.length) {
-        void syncEntriesWithLocalServer(mergedState.entries);
+  const [firestoreEntries] = await Promise.all([
+    fetchFirestoreLeaderboardEntries(),
+    (async () => {
+      try {
+        const queryParams = new URLSearchParams({
+          playerId: profile.playerId,
+          playerName: profile.name,
+          region: profile.region,
+        });
+        const res = await fetch(`/api/leaderboard?${queryParams.toString()}`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        });
+        if (isJsonResponse(res)) {
+          const serverData = (await res.json()) as LeaderboardState;
+          upsertRemoteCacheEntries(serverData.entries);
+        }
+      } catch {
+        // Ignore network error
       }
-      return mergedState;
-    }
-  } catch {
-    // Fallback to unified live WebSocket/MQTT + local state
+    })(),
+  ]);
+
+  const mergedState = buildUnifiedLeaderboardState(profile, firestoreEntries);
+  if (mergedState.entries.length > 0) {
+    void syncEntriesWithBackendServer(mergedState.entries);
   }
-  return getUnifiedLeaderboardState(profile);
+  return mergedState;
 }
 
 /**
- * Subscribes to live session leaderboard updates via:
- * 1. Global WebSocket/MQTT live session sync (works across all phones/browsers on any host)
- * 2. Server-Sent Events (/api/leaderboard/stream when local backend is running)
- * 3. Cross-tab BroadcastChannel & localStorage events
- * 4. Periodic refresh
+ * Subscribes to live leaderboard and presence updates from:
+ * 1. Cloud Firestore `onSnapshot` (sorted by `cumulativeScore` DESC)
+ * 2. Firebase Realtime Database `presence` (`onValue` + `.info/connected` + `onDisconnect`)
+ * 3. Live session sync & Server-Sent Events (`/api/leaderboard/stream`)
  */
 export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
 
-  liveSessionSync.init(loadStoredEntries());
+  liveSessionSync.init();
+
+  let firestoreUnsub: Unsubscribe | null = null;
+  const services = getFirebaseServices();
+  if (services) {
+    void ensureAnonymousAuth().then(() => {
+      try {
+        const leaderboardQuery = query(
+          collection(services.db, FIRESTORE_LEADERBOARD_COLLECTION),
+          orderBy('cumulativeScore', 'desc'),
+          limit(100)
+        );
+        firestoreUnsub = onSnapshot(
+          leaderboardQuery,
+          (snapshot) => {
+            const entries: RawLeaderboardEntry[] = [];
+            snapshot.forEach((docSnap) => {
+              const sanitized = sanitizeEntry({
+                playerId: docSnap.id,
+                ...docSnap.data(),
+              });
+              if (sanitized) entries.push(sanitized);
+            });
+            upsertRemoteCacheEntries(entries);
+            liveSessionSync.mergeExternalEntries(entries);
+            onShouldRefresh();
+          },
+          () => {
+            // Ignore snapshot permission error before rules deployment
+          }
+        );
+      } catch {
+        // Ignore query error
+      }
+    });
+  }
+
+  const unsubscribePresence = firebasePresence.subscribe(() => {
+    onShouldRefresh();
+  });
 
   const unsubscribeLiveSync = liveSessionSync.subscribe(() => {
-    getAndPersistMergedEntries();
+    upsertRemoteCacheEntries(liveSessionSync.getEntries());
     onShouldRefresh();
   });
 
@@ -281,8 +447,14 @@ export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => v
       eventSource = new EventSource('/api/leaderboard/stream');
       eventSource.onmessage = (event) => {
         try {
-          const parsed = JSON.parse(event.data) as { type?: string };
-          if (parsed.type === 'leaderboard_update') {
+          const parsed = JSON.parse(event.data) as {
+            type?: string;
+            onlineCount?: number;
+          };
+          if (
+            parsed.type === 'leaderboard_update' ||
+            parsed.type === 'presence_update'
+          ) {
             onShouldRefresh();
           }
         } catch {
@@ -290,7 +462,6 @@ export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => v
         }
       };
       eventSource.onerror = () => {
-        // Close SSE quietly if deployed on a static host without /api/leaderboard/stream
         if (eventSource && eventSource.readyState === EventSource.CLOSED) {
           eventSource.close();
         }
@@ -311,21 +482,15 @@ export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => v
     // Ignore BroadcastChannel error
   }
 
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === FALLBACK_PLAYERS_STORAGE_KEY) {
-      onShouldRefresh();
-    }
-  };
-  window.addEventListener('storage', handleStorage);
-
   const pollInterval = window.setInterval(() => {
     onShouldRefresh();
   }, 4000);
 
   return () => {
+    if (firestoreUnsub) firestoreUnsub();
+    unsubscribePresence();
     unsubscribeLiveSync();
     window.clearInterval(pollInterval);
-    window.removeEventListener('storage', handleStorage);
     if (eventSource) {
       eventSource.close();
     }
@@ -339,14 +504,16 @@ export function broadcastPlayerPlayingState(
   profile: PlayerProfile,
   isPlaying: boolean
 ): void {
+  firebasePresence.updatePresence(profile, isPlaying);
+
   if (!profile.name || profile.name.trim().toLowerCase() === 'player') return;
-  const state = getUnifiedLeaderboardState(profile);
+  const state = buildUnifiedLeaderboardState(profile);
   const updatedEntry: RawLeaderboardEntry = {
     ...state.playerEntry,
     isPlaying,
     lastSeenAt: Date.now(),
   };
-  getAndPersistMergedEntries([updatedEntry]);
+  upsertRemoteCacheEntries([updatedEntry]);
   liveSessionSync.publishPlayerEntry(updatedEntry);
   notifyCrossTabLeaderboardChange();
 }
@@ -359,6 +526,44 @@ export async function startServerPuzzleSession(params: {
 }): Promise<{ sessionId: string; leaderboard: LeaderboardState }> {
   broadcastPlayerPlayingState(params.profile, true);
 
+  // 1. Try Firebase Cloud Function (`startPuzzleSession`) if enabled
+  const services = getFirebaseServices();
+  if (services && isCloudFunctionsEnabled()) {
+    try {
+      await ensureAnonymousAuth();
+      const startFn = httpsCallable<
+        {
+          playerId: string;
+          playerName: string;
+          region: string;
+          imageId: string;
+          gridSize: number;
+          initialTiles?: PuzzleTileData[];
+        },
+        { sessionId: string }
+      >(services.functions, 'startPuzzleSession');
+
+      const response = await startFn({
+        playerId: params.profile.playerId,
+        playerName: params.profile.name,
+        region: params.profile.region,
+        imageId: params.imageId,
+        gridSize: params.gridSize,
+        initialTiles: params.initialTiles,
+      });
+
+      if (response.data?.sessionId) {
+        return {
+          sessionId: response.data.sessionId,
+          leaderboard: buildUnifiedLeaderboardState(params.profile),
+        };
+      }
+    } catch {
+      // Fallback to /api/puzzle/start
+    }
+  }
+
+  // 2. Try Vercel / Vite backend API (`/api/puzzle/start`)
   try {
     const res = await fetch('/api/puzzle/start', {
       method: 'POST',
@@ -377,7 +582,7 @@ export async function startServerPuzzleSession(params: {
         sessionId: string;
         leaderboard: LeaderboardState;
       };
-      const mergedLeaderboard = getUnifiedLeaderboardState(
+      const mergedLeaderboard = buildUnifiedLeaderboardState(
         params.profile,
         data.leaderboard.entries
       );
@@ -388,17 +593,17 @@ export async function startServerPuzzleSession(params: {
       };
     }
   } catch {
-    // Offline / static host fallback
+    // Fallback
   }
 
   const fallbackSessionId =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
-      : `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      : `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   return {
     sessionId: fallbackSessionId,
-    leaderboard: getUnifiedLeaderboardState(params.profile),
+    leaderboard: buildUnifiedLeaderboardState(params.profile),
   };
 }
 
@@ -410,6 +615,17 @@ export async function pauseServerPuzzleSession(
     broadcastPlayerPlayingState(profile, false);
   }
   if (!sessionId) return;
+
+  const services = getFirebaseServices();
+  if (services && isCloudFunctionsEnabled()) {
+    try {
+      const pauseFn = httpsCallable(services.functions, 'pausePuzzleSession');
+      void pauseFn({ sessionId }).catch(() => {});
+    } catch {
+      // Ignore
+    }
+  }
+
   try {
     await fetch('/api/puzzle/pause', {
       method: 'POST',
@@ -429,6 +645,17 @@ export async function resumeServerPuzzleSession(
     broadcastPlayerPlayingState(profile, true);
   }
   if (!sessionId) return;
+
+  const services = getFirebaseServices();
+  if (services && isCloudFunctionsEnabled()) {
+    try {
+      const resumeFn = httpsCallable(services.functions, 'resumePuzzleSession');
+      void resumeFn({ sessionId }).catch(() => {});
+    } catch {
+      // Ignore
+    }
+  }
+
   try {
     await fetch('/api/puzzle/resume', {
       method: 'POST',
@@ -448,6 +675,17 @@ export async function abandonServerPuzzleSession(
     broadcastPlayerPlayingState(profile, false);
   }
   if (!sessionId) return;
+
+  const services = getFirebaseServices();
+  if (services && isCloudFunctionsEnabled()) {
+    try {
+      const abandonFn = httpsCallable(services.functions, 'abandonPuzzleSession');
+      void abandonFn({ sessionId }).catch(() => {});
+    } catch {
+      // Ignore
+    }
+  }
+
   try {
     await fetch('/api/puzzle/abandon', {
       method: 'POST',
@@ -456,6 +694,68 @@ export async function abandonServerPuzzleSession(
     });
   } catch {
     // Ignore offline error
+  }
+}
+
+/**
+ * Persists a validated puzzle score atomically into Cloud Firestore `leaderboard/{playerId}`.
+ */
+async function persistScoreToFirestore(
+  profile: PlayerProfile,
+  pointsAwarded: number,
+  elapsedSeconds: number
+): Promise<void> {
+  const services = getFirebaseServices();
+  if (!services) return;
+
+  const cleanName = profile.name.trim();
+  const cleanRegion = profile.region.trim() || 'Greater Accra';
+  const canonicalId = createPlayerIdFromProfile(cleanName, cleanRegion);
+
+  try {
+    const user = await ensureAnonymousAuth();
+    if (!user) return;
+
+    const playerRef = doc(services.db, FIRESTORE_LEADERBOARD_COLLECTION, canonicalId);
+    await runTransaction(services.db, async (tx) => {
+      const snap = await tx.get(playerRef);
+      const nowIso = new Date().toISOString();
+      if (!snap.exists()) {
+        tx.set(playerRef, {
+          uid: user.uid,
+          playerId: canonicalId,
+          playerName: cleanName,
+          region: cleanRegion,
+          cumulativeScore: pointsAwarded,
+          puzzlesSolved: 1,
+          bestTimeSeconds: elapsedSeconds,
+          updatedAt: nowIso,
+          updatedAtServer: serverTimestamp(),
+        });
+      } else {
+        const existing = snap.data();
+        const prevScore = Math.max(0, Math.floor(Number(existing.cumulativeScore) || 0));
+        const prevSolved = Math.max(0, Math.floor(Number(existing.puzzlesSolved) || 0));
+        const prevBest =
+          typeof existing.bestTimeSeconds === 'number' && existing.bestTimeSeconds > 0
+            ? Math.floor(existing.bestTimeSeconds)
+            : null;
+
+        tx.update(playerRef, {
+          uid: existing.uid || user.uid,
+          playerName: cleanName,
+          region: cleanRegion,
+          cumulativeScore: prevScore + pointsAwarded,
+          puzzlesSolved: prevSolved + 1,
+          bestTimeSeconds:
+            prevBest === null ? elapsedSeconds : Math.min(prevBest, elapsedSeconds),
+          updatedAt: nowIso,
+          updatedAtServer: serverTimestamp(),
+        });
+      }
+    });
+  } catch {
+    // Ignore when Firestore rules or project not yet configured
   }
 }
 
@@ -468,7 +768,7 @@ export async function completeServerPuzzleSession(params: {
   moves: number;
   monotonicElapsedSeconds: number;
 }): Promise<ScoreSubmissionResult> {
-  const existingCompleted = getLocalCompletedSessions()[params.sessionId];
+  const existingCompleted = completedSessionIdsMemory.get(params.sessionId);
   if (existingCompleted) {
     return { ...existingCompleted, alreadyAwarded: true };
   }
@@ -477,10 +777,98 @@ export async function completeServerPuzzleSession(params: {
     throw new Error('Puzzle is incomplete or incorrectly solved.');
   }
 
-  const beforeState = getUnifiedLeaderboardState(params.profile);
+  broadcastPlayerPlayingState(params.profile, false);
+
+  const beforeState = buildUnifiedLeaderboardState(params.profile);
   const previousRank =
     beforeState.playerEntry.puzzlesSolved > 0 ? beforeState.playerEntry.rank : null;
 
+  // 1. Try Trusted Firebase Cloud Function (`completePuzzleSession`) if enabled
+  const services = getFirebaseServices();
+  if (services && isCloudFunctionsEnabled()) {
+    try {
+      await ensureAnonymousAuth();
+      const completeFn = httpsCallable<
+        {
+          sessionId: string;
+          playerId: string;
+          playerName: string;
+          region: string;
+          imageId: string;
+          gridSize: number;
+          finalTiles: PuzzleTileData[];
+          moves: number;
+          monotonicElapsedSeconds: number;
+        },
+        {
+          sessionId: string;
+          elapsedSeconds: number;
+          pointsAwarded: number;
+          tierLabel: string;
+          cumulativeScore: number;
+          puzzlesSolved: number;
+          bestTimeSeconds: number;
+          alreadyAwarded: boolean;
+        }
+      >(services.functions, 'completePuzzleSession');
+
+      const fnRes = await completeFn({
+        sessionId: params.sessionId,
+        playerId: params.profile.playerId,
+        playerName: params.profile.name,
+        region: params.profile.region,
+        imageId: params.imageId,
+        gridSize: params.gridSize,
+        finalTiles: params.finalTiles,
+        moves: params.moves,
+        monotonicElapsedSeconds: params.monotonicElapsedSeconds,
+      });
+
+      if (fnRes.data) {
+        const canonicalId = createPlayerIdFromProfile(
+          params.profile.name,
+          params.profile.region
+        );
+        const updatedPlayer: RawLeaderboardEntry = {
+          playerId: canonicalId,
+          playerName: params.profile.name.trim(),
+          region: params.profile.region.trim(),
+          cumulativeScore: fnRes.data.cumulativeScore,
+          puzzlesSolved: fnRes.data.puzzlesSolved,
+          bestTimeSeconds: fnRes.data.bestTimeSeconds,
+          updatedAt: new Date().toISOString(),
+          isPlaying: false,
+          lastSeenAt: Date.now(),
+        };
+
+        const mergedLeaderboard = buildUnifiedLeaderboardState(params.profile, [
+          updatedPlayer,
+        ]);
+        liveSessionSync.publishPlayerEntry(updatedPlayer);
+        void syncEntriesWithBackendServer(mergedLeaderboard.entries);
+
+        const result: ScoreSubmissionResult = {
+          sessionId: params.sessionId,
+          elapsedSeconds: fnRes.data.elapsedSeconds,
+          pointsAwarded: fnRes.data.pointsAwarded,
+          tierLabel: fnRes.data.tierLabel,
+          cumulativeScore: mergedLeaderboard.playerEntry.cumulativeScore,
+          globalRank: mergedLeaderboard.playerEntry.rank,
+          previousRank,
+          totalPlayers: mergedLeaderboard.totalPlayers,
+          alreadyAwarded: fnRes.data.alreadyAwarded,
+          leaderboard: mergedLeaderboard,
+        };
+        completedSessionIdsMemory.set(params.sessionId, result);
+        notifyCrossTabLeaderboardChange();
+        return result;
+      }
+    } catch {
+      // Fallback to /api/puzzle/complete + Firestore transaction
+    }
+  }
+
+  // 2. Try Trusted Backend API (`/api/puzzle/complete`)
   try {
     const res = await fetch('/api/puzzle/complete', {
       method: 'POST',
@@ -493,12 +881,19 @@ export async function completeServerPuzzleSession(params: {
         imageId: params.imageId,
         finalTiles: params.finalTiles,
         moves: params.moves,
+        monotonicElapsedSeconds: params.monotonicElapsedSeconds,
       }),
     });
 
     if (isJsonResponse(res)) {
       const serverResult = (await res.json()) as ScoreSubmissionResult;
-      const mergedLeaderboard = getUnifiedLeaderboardState(
+      void persistScoreToFirestore(
+        params.profile,
+        serverResult.pointsAwarded,
+        serverResult.elapsedSeconds
+      );
+
+      const mergedLeaderboard = buildUnifiedLeaderboardState(
         params.profile,
         serverResult.leaderboard.entries
       );
@@ -508,7 +903,7 @@ export async function completeServerPuzzleSession(params: {
         lastSeenAt: Date.now(),
       };
       liveSessionSync.publishPlayerEntry(publishedPlayer);
-      void syncEntriesWithLocalServer(mergedLeaderboard.entries);
+      void syncEntriesWithBackendServer(mergedLeaderboard.entries);
 
       const finalResult: ScoreSubmissionResult = {
         ...serverResult,
@@ -518,17 +913,20 @@ export async function completeServerPuzzleSession(params: {
         totalPlayers: mergedLeaderboard.totalPlayers,
         leaderboard: mergedLeaderboard,
       };
-      saveLocalCompletedSession(params.sessionId, finalResult);
+      completedSessionIdsMemory.set(params.sessionId, finalResult);
       notifyCrossTabLeaderboardChange();
       return finalResult;
     }
   } catch {
-    // Fallback to client-side authoritative scoring + live cross-device broadcast
+    // Fallback to Firestore transaction + authoritative scoring module
   }
 
+  // 3. Direct Firestore transaction + authoritative scoring module
   const elapsedSeconds = Math.max(1, Math.floor(params.monotonicElapsedSeconds));
   const pointsAwarded = calculateTimeScore(elapsedSeconds);
   const tier = getScoringTierForTime(elapsedSeconds);
+
+  await persistScoreToFirestore(params.profile, pointsAwarded, elapsedSeconds);
 
   const canonicalId = createPlayerIdFromProfile(params.profile.name, params.profile.region);
   const updatedPlayer: RawLeaderboardEntry = {
@@ -546,9 +944,9 @@ export async function completeServerPuzzleSession(params: {
     lastSeenAt: Date.now(),
   };
 
-  const updatedLeaderboard = getUnifiedLeaderboardState(params.profile, [updatedPlayer]);
+  const updatedLeaderboard = buildUnifiedLeaderboardState(params.profile, [updatedPlayer]);
   liveSessionSync.publishPlayerEntry(updatedPlayer);
-  void syncEntriesWithLocalServer(updatedLeaderboard.entries);
+  void syncEntriesWithBackendServer(updatedLeaderboard.entries);
   notifyCrossTabLeaderboardChange();
 
   const fallbackResult: ScoreSubmissionResult = {
@@ -564,6 +962,6 @@ export async function completeServerPuzzleSession(params: {
     leaderboard: updatedLeaderboard,
   };
 
-  saveLocalCompletedSession(params.sessionId, fallbackResult);
+  completedSessionIdsMemory.set(params.sessionId, fallbackResult);
   return fallbackResult;
 }

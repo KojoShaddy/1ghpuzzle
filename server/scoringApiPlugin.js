@@ -431,11 +431,30 @@ export function createScoringMiddleware() {
   const playersMap = loadPlayersMap();
   const sessions = new Map();
   const sseClients = new Set();
+  const presenceMap = new Map(); // connectionId -> { uid, playerId, playerName, region, isPlaying, state, lastChanged }
 
-  function broadcastLeaderboardUpdate() {
+  function prunePresenceMap() {
+    const now = Date.now();
+    let changed = false;
+    for (const [connId, item] of presenceMap.entries()) {
+      if (now - item.lastChanged > 18_000) {
+        presenceMap.delete(connId);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function getActivePresenceList() {
+    prunePresenceMap();
+    return Array.from(presenceMap.values());
+  }
+
+  function broadcastLeaderboardUpdate(type = 'leaderboard_update') {
     if (sseClients.size === 0) return;
     const payload = JSON.stringify({
-      type: 'leaderboard_update',
+      type,
+      onlineCount: Math.max(sseClients.size, presenceMap.size),
       timestamp: Date.now(),
     });
     for (const clientRes of sseClients) {
@@ -466,13 +485,84 @@ export function createScoringMiddleware() {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
-        res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`);
 
         sseClients.add(res);
+        res.write(
+          `data: ${JSON.stringify({
+            type: 'connected',
+            onlineCount: Math.max(sseClients.size, presenceMap.size),
+            timestamp: Date.now(),
+          })}\n\n`
+        );
+        broadcastLeaderboardUpdate('presence_update');
+
         req.on('close', () => {
           sseClients.delete(res);
+          broadcastLeaderboardUpdate('presence_update');
         });
         return;
+      }
+
+      // POST /api/presence/heartbeat
+      if (req.method === 'POST' && pathname === '/api/presence/heartbeat') {
+        const body = await readJsonBody(req);
+        const connectionId = String(body.connectionId || '').slice(0, 64);
+        if (!connectionId) {
+          return sendJson(res, 400, { error: 'Missing connectionId' });
+        }
+        const cleanName = sanitizePlayerName(body.playerName) || 'Guest Player';
+        const cleanRegion = sanitizeRegion(body.region);
+        const playerId = String(body.playerId || createDeterministicPlayerId(cleanName, cleanRegion)).slice(0, 80);
+        const isPlaying = Boolean(body.isPlaying);
+
+        const prev = presenceMap.get(connectionId);
+        presenceMap.set(connectionId, {
+          uid: connectionId,
+          playerId,
+          playerName: cleanName,
+          region: cleanRegion,
+          isPlaying,
+          state: 'online',
+          lastChanged: Date.now(),
+        });
+
+        let playerAdded = false;
+        if (cleanName.length >= 2 && cleanName.toLowerCase() !== 'guest player' && cleanName.toLowerCase() !== 'player') {
+          const sizeBefore = playersMap.size;
+          resolveOrCreatePlayer(playersMap, playerId, cleanName, cleanRegion);
+          if (playersMap.size !== sizeBefore) {
+            savePlayersMap(playersMap);
+            playerAdded = true;
+          }
+        }
+
+        const participants = getActivePresenceList();
+        if (
+          !prev ||
+          prev.playerName !== cleanName ||
+          prev.region !== cleanRegion ||
+          prev.isPlaying !== isPlaying ||
+          playerAdded
+        ) {
+          broadcastLeaderboardUpdate('presence_update');
+        }
+
+        return sendJson(res, 200, {
+          onlineCount: Math.max(participants.length, sseClients.size, 1),
+          participants,
+        });
+      }
+
+      // POST /api/presence/leave
+      if (req.method === 'POST' && pathname === '/api/presence/leave') {
+        const body = await readJsonBody(req);
+        const connectionId = String(body.connectionId || '').slice(0, 64);
+        if (connectionId && presenceMap.delete(connectionId)) {
+          broadcastLeaderboardUpdate('presence_update');
+        }
+        return sendJson(res, 200, {
+          onlineCount: getActivePresenceList().length,
+        });
       }
 
       // GET /api/leaderboard

@@ -1,0 +1,212 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// Collection: leaderboard
+// Document ID: {playerId} (deterministic slug "player-<name>-<region>")
+// Fields:
+//   - uid: string (required, immutable after create, 1..128 chars) - Firebase Auth UID of the player
+//   - playerId: string (required, immutable, matches document ID, 2..80 chars) - Canonical player identifier
+//   - playerName: string (required, 2..32 chars) - Player display name / nickname (no PII)
+//   - region: string (required, enum of 16 Ghana regions) - Player selected Ghana region
+//   - cumulativeScore: int (required, >= 0, max +1200 per update) - Total cumulative points earned
+//   - puzzlesSolved: int (required, >= 0, increments by 0 or 1 per update) - Total puzzles solved
+//   - bestTimeSeconds: int or null (required, > 0 and <= 86400 when int) - Fastest completion time in seconds
+//   - updatedAt: string (required, ISO-8601 date string, <= 40 chars) - Client ISO timestamp
+//   - updatedAtServer: timestamp (required, equals request.time) - Server authoritative timestamp
+//
+// Collection: puzzleSessions
+// Document ID: {sessionId}
+// Fields:
+//   - uid: string (required, immutable) - Firebase Auth UID of the player
+//   - sessionId: string (required, immutable) - Unique puzzle session ID
+//   - status: string (required, enum: 'active', 'paused', 'completed', 'abandoned')
+//   - Note: Managed exclusively by trusted Firebase Cloud Functions (Admin SDK).
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function uidUnchanged() {
+      return ('uid' in request.resource.data) &&
+        request.resource.data.uid is string &&
+        request.resource.data.uid.size() >= 1 &&
+        request.resource.data.uid.size() <= 128 &&
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return ('uid' in request.resource.data) &&
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.size() >= 19 &&
+        dateStr.size() <= 40 &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidGhanaRegion(region) {
+      return region is string &&
+        region in [
+          'Ahafo',
+          'Ashanti',
+          'Bono',
+          'Bono East',
+          'Central',
+          'Eastern',
+          'Greater Accra',
+          'North East',
+          'Northern',
+          'Oti',
+          'Savannah',
+          'Upper East',
+          'Upper West',
+          'Volta',
+          'Western',
+          'Western North'
+        ];
+    }
+
+    function isValidScoringIncrement(delta) {
+      return delta in [0, 50, 100, 200, 300, 500, 750, 1000, 1200];
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidLeaderboardEntry(data, docId) {
+      return hasRequiredFields([
+          'uid',
+          'playerId',
+          'playerName',
+          'region',
+          'cumulativeScore',
+          'puzzlesSolved',
+          'bestTimeSeconds',
+          'updatedAt',
+          'updatedAtServer'
+        ]) &&
+        hasOnlyAllowedFields([
+          'uid',
+          'playerId',
+          'playerName',
+          'region',
+          'cumulativeScore',
+          'puzzlesSolved',
+          'bestTimeSeconds',
+          'updatedAt',
+          'updatedAtServer'
+        ]) &&
+        validStringLength('uid', 1, 128) &&
+        validStringLength('playerId', 2, 80) &&
+        data.playerId == docId &&
+        validStringLength('playerName', 2, 32) &&
+        isValidGhanaRegion(data.region) &&
+        data.cumulativeScore is int &&
+        data.cumulativeScore >= 0 &&
+        data.cumulativeScore <= 10000000 &&
+        data.puzzlesSolved is int &&
+        data.puzzlesSolved >= 0 &&
+        data.puzzlesSolved <= 100000 &&
+        (
+          data.bestTimeSeconds == null ||
+          (data.bestTimeSeconds is int && data.bestTimeSeconds >= 1 && data.bestTimeSeconds <= 86400)
+        ) &&
+        isValidDateString(data.updatedAt) &&
+        data.updatedAtServer is timestamp &&
+        data.updatedAtServer == request.time;
+    }
+
+    function isValidLeaderboardCreate(data, docId) {
+      return isValidLeaderboardEntry(data, docId) &&
+        uidUnchanged() &&
+        data.puzzlesSolved <= 1 &&
+        isValidScoringIncrement(data.cumulativeScore) &&
+        (
+          (data.puzzlesSolved == 0 && data.cumulativeScore == 0 && data.bestTimeSeconds == null) ||
+          (data.puzzlesSolved == 1 && data.cumulativeScore >= 50 && data.bestTimeSeconds is int)
+        );
+    }
+
+    function isValidLeaderboardUpdate(data, docId) {
+      let scoreDelta = data.cumulativeScore - resource.data.cumulativeScore;
+      let solvedDelta = data.puzzlesSolved - resource.data.puzzlesSolved;
+      return isValidLeaderboardEntry(data, docId) &&
+        isDocOwner() &&
+        uidNotModified() &&
+        data.playerId == resource.data.playerId &&
+        solvedDelta >= 0 &&
+        solvedDelta <= 1 &&
+        isValidScoringIncrement(scoreDelta) &&
+        (
+          (solvedDelta == 0 &&
+            scoreDelta == 0 &&
+            data.bestTimeSeconds == resource.data.bestTimeSeconds) ||
+          (solvedDelta == 1 &&
+            scoreDelta >= 50 &&
+            data.bestTimeSeconds is int &&
+            (resource.data.bestTimeSeconds == null ||
+              data.bestTimeSeconds <= resource.data.bestTimeSeconds))
+        );
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /leaderboard/{playerId} {
+      // Authenticated participants (including anonymous auth) can read the global leaderboard
+      allow read: if isAuthenticated();
+
+      // Create & update require strict schema, ownership, and valid tier score progression
+      allow create: if isAuthenticated() && isValidLeaderboardCreate(request.resource.data, playerId);
+      allow update: if isAuthenticated() && isValidLeaderboardUpdate(request.resource.data, playerId);
+      allow delete: if false;
+    }
+
+    match /puzzleSessions/{sessionId} {
+      // Sessions are managed exclusively by trusted Firebase Cloud Functions (Admin SDK)
+      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Default deny for all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

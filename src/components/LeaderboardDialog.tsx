@@ -29,7 +29,7 @@ export const LeaderboardDialog: React.FC<LeaderboardDialogProps> = ({
 
   if (!isOpen) return null;
 
-  const { playerEntry, totalPlayers, entries } = leaderboard;
+  const { playerEntry, totalPlayers, entries, onlineCount = 1 } = leaderboard;
 
   return (
     <dialog
@@ -52,16 +52,19 @@ export const LeaderboardDialog: React.FC<LeaderboardDialogProps> = ({
               <Trophy className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2
                   id="leaderboard-dialog-title"
                   className="font-display font-bold text-xl text-slate-900 dark:text-white"
                 >
                   Global Leaderboard
                 </h2>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <span
+                  id="leaderboard-online-badge"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Session
+                  <span>Live Session • {Math.max(1, onlineCount)} Online</span>
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">

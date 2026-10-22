@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
-import { ArrowRight, Flag, MapPin, User, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, Flag, MapPin, User } from 'lucide-react';
 import { GHANA_REGIONS } from '../data/puzzles';
-import { LeaderboardEntry, PlayerProfile } from '../types/puzzle';
+import { PlayerProfile } from '../types/puzzle';
 
 interface PlayerRegistrationProps {
   initialProfile: PlayerProfile | null;
-  sessionPlayers?: LeaderboardEntry[];
   onCompleteRegistration: (name: string, region: string) => void;
 }
 
 export const PlayerRegistration: React.FC<PlayerRegistrationProps> = ({
   initialProfile,
-  sessionPlayers = [],
   onCompleteRegistration,
 }) => {
   const [name, setName] = useState<string>(initialProfile?.name ?? '');
@@ -34,12 +32,6 @@ export const PlayerRegistration: React.FC<PlayerRegistrationProps> = ({
 
     setErrorMessage(null);
     onCompleteRegistration(trimmedName, region);
-  };
-
-  const handleClearForNewPlayer = () => {
-    setName('');
-    setRegion('');
-    setErrorMessage(null);
   };
 
   return (
@@ -66,8 +58,7 @@ export const PlayerRegistration: React.FC<PlayerRegistrationProps> = ({
             Player Registration
           </h1>
           <p className="text-xs sm:text-sm text-emerald-50 mt-1">
-            Enter a new player name or select an existing session player below. All players stay on
-            the live leaderboard.
+            Enter your name or nickname and select your region to join the live leaderboard.
           </p>
         </div>
 
@@ -79,56 +70,6 @@ export const PlayerRegistration: React.FC<PlayerRegistrationProps> = ({
               className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs sm:text-sm font-medium text-rose-600 dark:text-rose-400"
             >
               {errorMessage}
-            </div>
-          )}
-
-          {/* Quick Switch / New Player Toolbar when session already has players */}
-          {sessionPlayers.length > 0 && (
-            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  Session Players ({sessionPlayers.length})
-                </span>
-                <button
-                  id="new-player-clear-btn"
-                  type="button"
-                  onClick={handleClearForNewPlayer}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 hover:bg-emerald-600/20 transition-colors"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Add New Player</span>
-                </button>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                {sessionPlayers.map((p) => {
-                  const isSelected =
-                    name.trim().toLowerCase() === p.playerName.toLowerCase() &&
-                    region === p.region;
-                  return (
-                    <button
-                      key={p.playerId}
-                      type="button"
-                      onClick={() => {
-                        setName(p.playerName);
-                        setRegion(p.region);
-                        setErrorMessage(null);
-                      }}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
-                        isSelected
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-emerald-500'
-                      }`}
-                    >
-                      <span>{p.playerName}</span>
-                      <span className="opacity-75 text-[10px]">
-                        ({p.cumulativeScore.toLocaleString()} pts)
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           )}
 

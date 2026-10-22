@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   CheckCircle2,
-  Download,
   Grid,
   HelpCircle,
   Moon,
@@ -18,11 +17,11 @@ interface GameHeaderProps {
   hasActiveGame: boolean;
   playerProfile: PlayerProfile | null;
   preferences: UserPreferences;
-  canInstallApp?: boolean;
-  onInstallApp?: () => void;
+  onlineCount?: number;
   onNavigateGallery: () => void;
   onReturnToGame: () => void;
   onEditProfile: () => void;
+  onOpenLeaderboard?: () => void;
   onToggleTheme: () => void;
   onToggleSound: () => void;
   onToggleHints: () => void;
@@ -34,11 +33,11 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
   hasActiveGame,
   playerProfile,
   preferences,
-  canInstallApp = false,
-  onInstallApp,
+  onlineCount = 1,
   onNavigateGallery,
   onReturnToGame,
   onEditProfile,
+  onOpenLeaderboard,
   onToggleTheme,
   onToggleSound,
   onToggleHints,
@@ -53,37 +52,49 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
         <div className="flex-1 bg-ghana-green" />
       </div>
 
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+      <div className="max-w-6xl mx-auto px-2.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-2">
         {/* Brand / Title */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
           <button
             id="header-brand-btn"
             type="button"
             onClick={playerProfile ? onNavigateGallery : undefined}
-            className="group flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-xl p-1 -ml-1"
+            className="group flex items-center gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-xl p-1 -ml-1 min-w-0"
             aria-label="1Ghana Image Puzzle"
           >
             <img
               src="/logo.png"
               alt="1Ghana Image Puzzle Logo"
-              className="w-9 h-9 sm:w-10 sm:h-10 object-contain shrink-0"
+              className="w-8 h-8 sm:w-10 sm:h-10 object-contain shrink-0"
             />
-            <div className="truncate">
-              <span className="block font-display font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white leading-tight truncate">
+            <div className="truncate min-w-0">
+              <span className="block font-display font-bold text-sm sm:text-lg tracking-tight text-slate-900 dark:text-white leading-tight truncate">
                 1Ghana Image Puzzle
               </span>
             </div>
           </button>
+
+          {/* Live Online Participant Count Pill */}
+          <button
+            id="header-online-count-btn"
+            type="button"
+            onClick={onOpenLeaderboard}
+            title="Live Online Participants - Click to view Leaderboard"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors shrink-0 cursor-pointer"
+          >
+            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span id="header-online-count-value">{Math.max(1, onlineCount)} Online</span>
+          </button>
         </div>
 
         {/* Navigation & Quick Settings */}
-        <div className="flex items-center gap-1 sm:gap-1.5">
+        <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
           {playerProfile && screen === 'game' && (
             <button
               id="nav-gallery-btn"
               type="button"
               onClick={onNavigateGallery}
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-2.5 sm:px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="inline-flex items-center justify-center gap-1.5 min-w-[36px] min-h-[36px] sm:min-h-[44px] px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
               <Grid className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               <span className="hidden sm:inline">Gallery</span>
@@ -95,7 +106,7 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
               id="nav-resume-game-btn"
               type="button"
               onClick={onReturnToGame}
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-2.5 sm:px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 hover:bg-emerald-600/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="inline-flex items-center justify-center gap-1.5 min-w-[36px] min-h-[36px] sm:min-h-[44px] px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 hover:bg-emerald-600/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
               <Gamepad2 className="w-4 h-4" />
               <span className="hidden sm:inline">Resume Board</span>
@@ -108,27 +119,13 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
               type="button"
               onClick={onEditProfile}
               title="Change Player or Region"
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="inline-flex items-center gap-1 sm:gap-1.5 min-h-[36px] sm:min-h-[44px] px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
-              <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span className="truncate max-w-[110px]">{playerProfile.name}</span>
+              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="truncate max-w-[68px] sm:max-w-[110px]">{playerProfile.name}</span>
               <span className="hidden md:inline text-slate-400">
                 ({playerProfile.region})
               </span>
-            </button>
-          )}
-
-          {canInstallApp && onInstallApp && (
-            <button
-              id="header-install-app-btn"
-              type="button"
-              onClick={onInstallApp}
-              aria-label="Install 1Ghana Puzzle App"
-              title="Install App on Phone or Device"
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-display font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-            >
-              <Download className="w-4 h-4 shrink-0" />
-              <span className="hidden sm:inline">Install App</span>
             </button>
           )}
 
@@ -139,9 +136,9 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
             onClick={onOpenRules}
             aria-label="Scoring Rules and How to Play"
             title="Scoring Rules"
-            className="inline-flex items-center gap-1 min-w-[44px] min-h-[44px] px-2 sm:px-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="inline-flex items-center justify-center gap-1 min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px] px-1.5 sm:px-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
-            <HelpCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <HelpCircle className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <span className="hidden md:inline">Scoring Rules</span>
           </button>
 
@@ -161,13 +158,13 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
                 ? 'Tile placement indicators: ON'
                 : 'Tile placement indicators: OFF'
             }
-            className={`min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+            className={`min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px] inline-flex items-center justify-center rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
               preferences.showTileHints
                 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
-            <CheckCircle2 className="w-5 h-5" />
+            <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
           {/* Sound Effects Toggle */}
@@ -178,12 +175,12 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
             aria-pressed={preferences.soundEnabled}
             aria-label={preferences.soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}
             title={preferences.soundEnabled ? 'Sound effects: ON' : 'Sound effects: OFF'}
-            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px] inline-flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             {preferences.soundEnabled ? (
-              <Volume2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <VolumeX className="w-5 h-5 text-slate-400" />
+              <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
             )}
           </button>
 
@@ -196,12 +193,12 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
               preferences.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
             }
             title={preferences.theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px] inline-flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             {preferences.theme === 'dark' ? (
-              <Sun className="w-5 h-5 text-amber-400" />
+              <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
             ) : (
-              <Moon className="w-5 h-5 text-slate-700" />
+              <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
             )}
           </button>
         </div>

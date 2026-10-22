@@ -12,4 +12,19 @@ export default defineConfig({
       interval: 250,
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          firebase: [
+            'firebase/app',
+            'firebase/auth',
+            'firebase/firestore',
+            'firebase/database',
+            'firebase/functions',
+          ],
+        },
+      },
+    },
+  },
 });

@@ -94,11 +94,11 @@ export const App: React.FC = () => {
         hasActiveGame={game.status !== 'idle'}
         preferences={preferences}
         playerProfile={game.playerProfile}
-        canInstallApp={!pwa.isInstalled}
-        onInstallApp={pwa.triggerInstall}
+        onlineCount={game.leaderboard.onlineCount}
         onNavigateGallery={game.goToGallery}
         onReturnToGame={handleReturnToGame}
         onEditProfile={game.openProfileEditor}
+        onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
         onToggleTheme={handleToggleTheme}
         onToggleSound={handleToggleSound}
         onToggleHints={handleToggleHints}
@@ -109,7 +109,6 @@ export const App: React.FC = () => {
         <div className="flex-1 flex flex-col justify-center">
           <PlayerRegistration
             initialProfile={game.playerProfile}
-            sessionPlayers={game.leaderboard.entries}
             onCompleteRegistration={game.registerPlayer}
           />
         </div>
@@ -202,9 +201,9 @@ export const App: React.FC = () => {
 
       {/* Footer */}
       <footer className="mt-auto border-t border-slate-200/70 dark:border-slate-800/70 py-4 px-4 text-center text-xs text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1 flex-wrap">
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-1 flex-wrap justify-center">
           Built with <Heart className="w-3.5 h-3.5 text-rose-500 fill-current" aria-label="love" />{' '}
-          by <strong className="font-semibold text-slate-700 dark:text-slate-200">Kojo Shaddy</strong> (
+          by{' '}
           <a
             id="footer-x-handle-link"
             href="https://x.com/kojo_shaddy"
@@ -212,9 +211,26 @@ export const App: React.FC = () => {
             rel="noopener noreferrer"
             className="font-semibold text-emerald-600 dark:text-emerald-400 underline underline-offset-2 hover:text-emerald-500 transition-colors"
           >
-            @kojo_shaddy
+            Kojo Shaddy
           </a>
-          )
+          {!pwa.isInstalled && (
+            <>
+              <span className="mx-1 text-slate-400 dark:text-slate-600" aria-hidden="true">
+                |
+              </span>
+              <a
+                id="footer-install-app-link"
+                href="#install-app"
+                onClick={(e) => {
+                  e.preventDefault();
+                  pwa.triggerInstall();
+                }}
+                className="font-semibold text-emerald-600 dark:text-emerald-400 underline underline-offset-2 hover:text-emerald-500 transition-colors cursor-pointer"
+              >
+                Install App
+              </a>
+            </>
+          )}
         </span>
       </footer>
 
