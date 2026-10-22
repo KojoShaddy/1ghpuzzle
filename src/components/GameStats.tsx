@@ -127,21 +127,16 @@ export const GameStats: React.FC<GameStatsProps> = ({
         </div>
       </div>
 
-      {/* Progress Bar & Best Score Footer */}
+      {/* Slim Progress Bar & Optional Best Record */}
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium text-slate-600 dark:text-slate-300">
-            Board Completion: <strong>{progressPercentage}%</strong>
-          </span>
-          {bestScore ? (
+        {bestScore && (
+          <div className="flex items-center justify-end text-[11px]">
             <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
-              <Trophy className="w-3.5 h-3.5" />
+              <Trophy className="w-3 h-3" />
               Best: {bestScore.points?.toLocaleString() ?? calculateTimeScore(bestScore.timeSeconds).toLocaleString()} pts ({formatTimeHuman(bestScore.timeSeconds)})
             </span>
-          ) : (
-            <span className="text-slate-400 dark:text-slate-500">No record set yet</span>
-          )}
-        </div>
+          </div>
+        )}
 
         <div
           role="progressbar"
@@ -149,7 +144,7 @@ export const GameStats: React.FC<GameStatsProps> = ({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-label="Puzzle completion progress"
-          className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"
+          className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"
         >
           <div
             style={{ width: `${progressPercentage}%` }}

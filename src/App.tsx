@@ -121,7 +121,6 @@ export const App: React.FC = () => {
             onSelectImage={(img) => game.selectImage(img, false)}
             onStartGame={game.startGame}
             onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
-            onEditProfile={game.openProfileEditor}
           />
         </div>
       ) : (
@@ -178,16 +177,10 @@ export const App: React.FC = () => {
 
               <GameControls
                 status={game.status}
-                selectedImage={game.selectedImage}
                 showReferenceOverlay={showReferenceOverlay}
                 onTogglePause={game.togglePause}
-                onRestart={game.restartGame}
                 onToggleReferenceOverlay={handleToggleReferenceOverlay}
-                onSelectImage={game.selectImage}
                 onNextPhoto={game.playNextImage}
-                onGoToGallery={game.goToGallery}
-                onOpenRules={() => setIsRulesOpen(true)}
-                onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
               />
 
               <GameLeaderboardPanel

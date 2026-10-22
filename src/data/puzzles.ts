@@ -60,7 +60,7 @@ const KNOWN_IMAGE_CATALOGUE: Record<string, ImageCatalogueEntry> = {
       'Designed by Theodosia Okoh in 1957 to replace the colonial ensign upon independence, the national flag of Ghana is a horizontal triband of red, gold, and green centered with a five-pointed black star. Red honors the blood shed for independence, gold represents the country’s mineral wealth, green symbolizes rich forests and agriculture, and the Black Star stands as the lodestar of African emancipation.',
     order: 2,
   },
-  'ghanamap.jpg': {
+  'ghana map.png': {
     id: 'ghanamap',
     title: 'Map of Ghana',
     category: 'History & Geography',
@@ -249,6 +249,8 @@ const discoveredImageModules = import.meta.glob<string>(
   { eager: true, import: 'default' }
 );
 
+const REPLACED_LEGACY_FILENAMES = new Set<string>(['ghanamap.jpg']);
+
 function buildPuzzleImagesCatalogue(): PuzzleImage[] {
   const seenKeys = new Set<string>();
   const items: Array<{ item: PuzzleImage; order: number }> = [];
@@ -258,7 +260,7 @@ function buildPuzzleImagesCatalogue(): PuzzleImage[] {
     const filename = segments[segments.length - 1] || rawPath;
     const lookupKey = filename.toLowerCase();
 
-    if (seenKeys.has(lookupKey)) {
+    if (REPLACED_LEGACY_FILENAMES.has(lookupKey) || seenKeys.has(lookupKey)) {
       continue;
     }
     seenKeys.add(lookupKey);
