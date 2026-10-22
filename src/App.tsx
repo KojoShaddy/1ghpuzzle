@@ -19,7 +19,7 @@ import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 const DEFAULT_PREFERENCES: UserPreferences = {
   theme: 'dark',
   soundEnabled: true,
-  showTileHints: true,
+  showTileHints: false,
 };
 
 export const App: React.FC = () => {
@@ -70,11 +70,8 @@ export const App: React.FC = () => {
   }, [setPreferences]);
 
   const handleToggleHints = useCallback(() => {
-    setPreferences((prev) => ({
-      ...prev,
-      showTileHints: !prev.showTileHints,
-    }));
-  }, [setPreferences]);
+    // Tile hints are currently disabled
+  }, []);
 
   const handleToggleReferenceOverlay = useCallback(() => {
     setShowReferenceOverlay((prev) => !prev);
@@ -150,7 +147,7 @@ export const App: React.FC = () => {
                 status={game.status}
                 selectedTileId={game.selectedTileId}
                 lastMovedTileIds={game.lastMovedTileIds}
-                showTileHints={preferences.showTileHints}
+                showTileHints={false}
                 showReferenceOverlay={showReferenceOverlay}
                 onSwapTiles={game.handleSwapTiles}
                 onSelectOrSwapTile={game.handleSelectOrSwapTile}

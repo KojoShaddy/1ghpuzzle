@@ -42,7 +42,7 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
   onOpenLeaderboard,
   onToggleTheme,
   onToggleSound,
-  onToggleHints,
+  onToggleHints: _onToggleHints,
   onOpenRules,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -270,32 +270,22 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
                     </span>
                   </button>
 
-                  {/* Tile Placement Hints */}
+                  {/* Tile Placement Hints (Disabled) */}
                   <button
                     id="toggle-hints-btn"
                     type="button"
                     role="menuitem"
-                    onClick={onToggleHints}
-                    className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
+                    disabled
+                    aria-disabled="true"
+                    title="Tile hints are disabled"
+                    className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-semibold text-slate-400 dark:text-slate-500 opacity-50 cursor-not-allowed select-none"
                   >
                     <span className="inline-flex items-center gap-2.5">
-                      <CheckCircle2
-                        className={`w-4 h-4 shrink-0 ${
-                          preferences.showTileHints
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-slate-400'
-                        }`}
-                      />
+                      <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0" />
                       <span>Tile Hints</span>
                     </span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                        preferences.showTileHints
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                      }`}
-                    >
-                      {preferences.showTileHints ? 'On' : 'Off'}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                      Off
                     </span>
                   </button>
                 </div>
