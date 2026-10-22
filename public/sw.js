@@ -1,4 +1,4 @@
-const CACHE_NAME = '1ghana-puzzle-cache-v2';
+const CACHE_NAME = '1ghana-puzzle-cache-v7';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -57,16 +57,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first for HTML navigation so updates arrive immediately, fallback to cache offline
-  if (request.mode === 'navigate') {
+  // Network-first for HTML navigation and JS/CSS bundles (/assets/) so code updates arrive immediately
+  if (request.mode === 'navigate' || url.pathname.startsWith('/assets/')) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
           return response;
         })
-        .catch(() => caches.match('/index.html') || caches.match('/'))
+        .catch(() => caches.match(request) || caches.match('/index.html') || caches.match('/'))
     );
     return;
   }

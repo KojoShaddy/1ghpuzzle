@@ -197,28 +197,7 @@ export function computeRankedLeaderboard(
       });
     } else {
       resolvedPlayerId = createPlayerIdFromProfile(cleanName, cleanRegion);
-      if (!map.has(resolvedPlayerId)) {
-        map.set(resolvedPlayerId, {
-          playerId: resolvedPlayerId,
-          playerName: cleanName,
-          region: cleanRegion,
-          cumulativeScore: 0,
-          puzzlesSolved: 0,
-          bestTimeSeconds: null,
-          updatedAt: new Date().toISOString(),
-        });
-      }
     }
-  } else if (resolvedPlayerId && !map.has(resolvedPlayerId)) {
-    map.set(resolvedPlayerId, {
-      playerId: resolvedPlayerId,
-      playerName: cleanName,
-      region: cleanRegion,
-      cumulativeScore: 0,
-      puzzlesSolved: 0,
-      bestTimeSeconds: null,
-      updatedAt: new Date().toISOString(),
-    });
   }
 
   const sorted = Array.from(map.values()).sort((a, b) => {

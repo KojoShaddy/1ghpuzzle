@@ -31,15 +31,14 @@ import {
 } from '../shared/scoring';
 import { firebasePresence } from './firebasePresence';
 import {
-  liveSessionSync,
   mergeTwoPlayerEntries,
   RawLeaderboardEntry,
   sanitizeEntry,
 } from './liveSessionSync';
 
-const PLAYER_ID_STORAGE_KEY = 'ghana-puzzle-player-id-v6';
-const LEADERBOARD_BROADCAST_CHANNEL = 'ghana-puzzle-leaderboard-sync-v6';
-const FIRESTORE_LEADERBOARD_COLLECTION = 'leaderboard_v6';
+const PLAYER_ID_STORAGE_KEY = 'ghana-puzzle-player-id-v7';
+const LEADERBOARD_BROADCAST_CHANNEL = 'ghana-puzzle-leaderboard-sync-v7';
+const FIRESTORE_LEADERBOARD_COLLECTION = 'leaderboard_v7';
 
 export { createPlayerIdFromProfile };
 
@@ -97,8 +96,13 @@ function upsertRemoteCacheEntries(entries: unknown[]): void {
   }
 }
 
+function replaceRemoteCacheEntries(entries: unknown[]): void {
+  remoteEntriesMemoryCache.clear();
+  upsertRemoteCacheEntries(entries);
+}
+
 /**
- * Merges Cloud Firestore entries, backend API entries, and live session entries,
+ * Builds the leaderboard state strictly from Cloud Firestore entries,
  * enriched with real-time presence (`isPlaying` and `onlineCount`) from Firebase Realtime Database.
  */
 function buildUnifiedLeaderboardState(
@@ -107,56 +111,23 @@ function buildUnifiedLeaderboardState(
 ): LeaderboardState {
   if (additionalEntries) {
     upsertRemoteCacheEntries(additionalEntries);
-    liveSessionSync.mergeExternalEntries(additionalEntries);
   }
 
   const presenceSnap = firebasePresence.getSnapshot();
   const mergedMap = new Map<string, RawLeaderboardEntry>();
 
-  const allSources = [
-    Array.from(remoteEntriesMemoryCache.values()),
-    liveSessionSync.getEntries(),
-  ];
-
-  for (const list of allSources) {
-    for (const item of list) {
-      const sanitized = sanitizeEntry(item);
-      if (!sanitized) continue;
-      const existing = mergedMap.get(sanitized.playerId);
-      if (!existing) {
-        mergedMap.set(sanitized.playerId, sanitized);
-      } else {
-        mergedMap.set(sanitized.playerId, mergeTwoPlayerEntries(existing, sanitized));
-      }
+  for (const item of remoteEntriesMemoryCache.values()) {
+    const sanitized = sanitizeEntry(item);
+    if (!sanitized) continue;
+    const existing = mergedMap.get(sanitized.playerId);
+    if (!existing) {
+      mergedMap.set(sanitized.playerId, sanitized);
+    } else {
+      mergedMap.set(sanitized.playerId, mergeTwoPlayerEntries(existing, sanitized));
     }
   }
 
-  // Also include online participants from Firebase RTDB presence who have registered a valid name
-  for (const p of presenceSnap.participants) {
-    if (
-      p.playerName &&
-      p.playerName.trim().length >= 2 &&
-      p.playerName.toLowerCase() !== 'guest player' &&
-      p.playerName.toLowerCase() !== 'player'
-    ) {
-      const canonicalId = createPlayerIdFromProfile(p.playerName, p.region);
-      if (!mergedMap.has(canonicalId)) {
-        mergedMap.set(canonicalId, {
-          playerId: canonicalId,
-          playerName: p.playerName.trim(),
-          region: p.region.trim() || 'Greater Accra',
-          cumulativeScore: 0,
-          puzzlesSolved: 0,
-          bestTimeSeconds: null,
-          updatedAt: new Date().toISOString(),
-          isPlaying: p.isPlaying,
-          lastSeenAt: Date.now(),
-        });
-      }
-    }
-  }
-
-  // Overlay live RTDB playing status
+  // Overlay live RTDB playing status onto existing Firestore leaderboard entries
   for (const [playerId, entry] of mergedMap.entries()) {
     if (presenceSnap.playingPlayerIds.has(playerId)) {
       mergedMap.set(playerId, { ...entry, isPlaying: true });
@@ -201,7 +172,7 @@ async function fetchFirestoreLeaderboardEntries(): Promise<RawLeaderboardEntry[]
         entries.push(sanitized);
       }
     });
-    upsertRemoteCacheEntries(entries);
+    replaceRemoteCacheEntries(entries);
     return entries;
   } catch {
     return [];
@@ -274,24 +245,9 @@ async function upsertFirestorePlayerProfile(profile: PlayerProfile): Promise<voi
   }
 }
 
-async function syncEntriesWithBackendServer(entries: RawLeaderboardEntry[]): Promise<void> {
-  if (entries.length === 0) return;
-  try {
-    await fetch('/api/leaderboard/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entries }),
-    });
-  } catch {
-    // Ignore if backend route is unavailable
-  }
-}
-
 export async function registerPlayerProfile(
   profile: PlayerProfile
 ): Promise<LeaderboardState> {
-  liveSessionSync.init();
-
   const cleanName = profile.name.trim();
   const cleanRegion = profile.region.trim() || 'Greater Accra';
   const canonicalId = createPlayerIdFromProfile(cleanName, cleanRegion);
@@ -302,48 +258,10 @@ export async function registerPlayerProfile(
   };
 
   firebasePresence.init(normalizedProfile, false);
-  void upsertFirestorePlayerProfile(normalizedProfile);
+  await upsertFirestorePlayerProfile(normalizedProfile);
+  await fetchFirestoreLeaderboardEntries();
 
-  const initialState = buildUnifiedLeaderboardState(normalizedProfile);
-  liveSessionSync.publishPlayerEntry({
-    ...initialState.playerEntry,
-    playerId: canonicalId,
-    playerName: cleanName,
-    region: cleanRegion,
-    lastSeenAt: Date.now(),
-  });
-  notifyCrossTabLeaderboardChange();
-
-  // Fetch latest Firestore entries in parallel with backend /api/player/register
-  const [firestoreEntries] = await Promise.all([
-    fetchFirestoreLeaderboardEntries(),
-    (async () => {
-      try {
-        const res = await fetch('/api/player/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            playerId: canonicalId,
-            playerName: cleanName,
-            region: cleanRegion,
-          }),
-        });
-        if (isJsonResponse(res)) {
-          const serverData = (await res.json()) as LeaderboardState;
-          upsertRemoteCacheEntries(serverData.entries);
-        }
-      } catch {
-        // Ignore network error
-      }
-    })(),
-  ]);
-
-  const finalState = buildUnifiedLeaderboardState(normalizedProfile, firestoreEntries);
-  liveSessionSync.publishPlayerEntry({
-    ...finalState.playerEntry,
-    lastSeenAt: Date.now(),
-  });
-  void syncEntriesWithBackendServer(finalState.entries);
+  const finalState = buildUnifiedLeaderboardState(normalizedProfile);
   notifyCrossTabLeaderboardChange();
 
   return finalState;
@@ -352,36 +270,8 @@ export async function registerPlayerProfile(
 export async function fetchGlobalLeaderboard(
   profile: PlayerProfile
 ): Promise<LeaderboardState> {
-  liveSessionSync.init();
-
-  const [firestoreEntries] = await Promise.all([
-    fetchFirestoreLeaderboardEntries(),
-    (async () => {
-      try {
-        const queryParams = new URLSearchParams({
-          playerId: profile.playerId,
-          playerName: profile.name,
-          region: profile.region,
-        });
-        const res = await fetch(`/api/leaderboard?${queryParams.toString()}`, {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        });
-        if (isJsonResponse(res)) {
-          const serverData = (await res.json()) as LeaderboardState;
-          upsertRemoteCacheEntries(serverData.entries);
-        }
-      } catch {
-        // Ignore network error
-      }
-    })(),
-  ]);
-
-  const mergedState = buildUnifiedLeaderboardState(profile, firestoreEntries);
-  if (mergedState.entries.length > 0) {
-    void syncEntriesWithBackendServer(mergedState.entries);
-  }
-  return mergedState;
+  await fetchFirestoreLeaderboardEntries();
+  return buildUnifiedLeaderboardState(profile);
 }
 
 /**
@@ -392,8 +282,6 @@ export async function fetchGlobalLeaderboard(
  */
 export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
-
-  liveSessionSync.init();
 
   let firestoreUnsub: Unsubscribe | null = null;
   const services = getFirebaseServices();
@@ -416,8 +304,7 @@ export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => v
               });
               if (sanitized) entries.push(sanitized);
             });
-            upsertRemoteCacheEntries(entries);
-            liveSessionSync.mergeExternalEntries(entries);
+            replaceRemoteCacheEntries(entries);
             onShouldRefresh();
           },
           () => {
@@ -434,43 +321,7 @@ export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => v
     onShouldRefresh();
   });
 
-  const unsubscribeLiveSync = liveSessionSync.subscribe(() => {
-    upsertRemoteCacheEntries(liveSessionSync.getEntries());
-    onShouldRefresh();
-  });
-
-  let eventSource: EventSource | null = null;
   let broadcastChannel: BroadcastChannel | null = null;
-
-  try {
-    if (typeof EventSource !== 'undefined') {
-      eventSource = new EventSource('/api/leaderboard/stream');
-      eventSource.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data) as {
-            type?: string;
-            onlineCount?: number;
-          };
-          if (
-            parsed.type === 'leaderboard_update' ||
-            parsed.type === 'presence_update'
-          ) {
-            onShouldRefresh();
-          }
-        } catch {
-          onShouldRefresh();
-        }
-      };
-      eventSource.onerror = () => {
-        if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-          eventSource.close();
-        }
-      };
-    }
-  } catch {
-    // Ignore EventSource error
-  }
-
   try {
     if (typeof BroadcastChannel !== 'undefined') {
       broadcastChannel = new BroadcastChannel(LEADERBOARD_BROADCAST_CHANNEL);
@@ -482,18 +333,9 @@ export function subscribeToLiveLeaderboard(onShouldRefresh: () => void): () => v
     // Ignore BroadcastChannel error
   }
 
-  const pollInterval = window.setInterval(() => {
-    onShouldRefresh();
-  }, 4000);
-
   return () => {
     if (firestoreUnsub) firestoreUnsub();
     unsubscribePresence();
-    unsubscribeLiveSync();
-    window.clearInterval(pollInterval);
-    if (eventSource) {
-      eventSource.close();
-    }
     if (broadcastChannel) {
       broadcastChannel.close();
     }
@@ -507,14 +349,15 @@ export function broadcastPlayerPlayingState(
   firebasePresence.updatePresence(profile, isPlaying);
 
   if (!profile.name || profile.name.trim().toLowerCase() === 'player') return;
-  const state = buildUnifiedLeaderboardState(profile);
-  const updatedEntry: RawLeaderboardEntry = {
-    ...state.playerEntry,
-    isPlaying,
-    lastSeenAt: Date.now(),
-  };
-  upsertRemoteCacheEntries([updatedEntry]);
-  liveSessionSync.publishPlayerEntry(updatedEntry);
+  const canonicalId = createPlayerIdFromProfile(profile.name, profile.region);
+  const existing = remoteEntriesMemoryCache.get(canonicalId);
+  if (existing) {
+    remoteEntriesMemoryCache.set(canonicalId, {
+      ...existing,
+      isPlaying,
+      lastSeenAt: Date.now(),
+    });
+  }
   notifyCrossTabLeaderboardChange();
 }
 
@@ -582,10 +425,7 @@ export async function startServerPuzzleSession(params: {
         sessionId: string;
         leaderboard: LeaderboardState;
       };
-      const mergedLeaderboard = buildUnifiedLeaderboardState(
-        params.profile,
-        data.leaderboard.entries
-      );
+      const mergedLeaderboard = buildUnifiedLeaderboardState(params.profile);
       notifyCrossTabLeaderboardChange();
       return {
         sessionId: data.sessionId,
@@ -844,8 +684,6 @@ export async function completeServerPuzzleSession(params: {
         const mergedLeaderboard = buildUnifiedLeaderboardState(params.profile, [
           updatedPlayer,
         ]);
-        liveSessionSync.publishPlayerEntry(updatedPlayer);
-        void syncEntriesWithBackendServer(mergedLeaderboard.entries);
 
         const result: ScoreSubmissionResult = {
           sessionId: params.sessionId,
@@ -868,7 +706,7 @@ export async function completeServerPuzzleSession(params: {
     }
   }
 
-  // 2. Try Trusted Backend API (`/api/puzzle/complete`)
+  // 2. Try Trusted Backend API (`/api/puzzle/complete`) for timer & move verification, then persist to Firestore
   try {
     const res = await fetch('/api/puzzle/complete', {
       method: 'POST',
@@ -887,23 +725,14 @@ export async function completeServerPuzzleSession(params: {
 
     if (isJsonResponse(res)) {
       const serverResult = (await res.json()) as ScoreSubmissionResult;
-      void persistScoreToFirestore(
+      await persistScoreToFirestore(
         params.profile,
         serverResult.pointsAwarded,
         serverResult.elapsedSeconds
       );
+      await fetchFirestoreLeaderboardEntries();
 
-      const mergedLeaderboard = buildUnifiedLeaderboardState(
-        params.profile,
-        serverResult.leaderboard.entries
-      );
-      const publishedPlayer: RawLeaderboardEntry = {
-        ...mergedLeaderboard.playerEntry,
-        isPlaying: false,
-        lastSeenAt: Date.now(),
-      };
-      liveSessionSync.publishPlayerEntry(publishedPlayer);
-      void syncEntriesWithBackendServer(mergedLeaderboard.entries);
+      const mergedLeaderboard = buildUnifiedLeaderboardState(params.profile);
 
       const finalResult: ScoreSubmissionResult = {
         ...serverResult,
@@ -927,6 +756,7 @@ export async function completeServerPuzzleSession(params: {
   const tier = getScoringTierForTime(elapsedSeconds);
 
   await persistScoreToFirestore(params.profile, pointsAwarded, elapsedSeconds);
+  await fetchFirestoreLeaderboardEntries();
 
   const canonicalId = createPlayerIdFromProfile(params.profile.name, params.profile.region);
   const updatedPlayer: RawLeaderboardEntry = {
@@ -944,9 +774,10 @@ export async function completeServerPuzzleSession(params: {
     lastSeenAt: Date.now(),
   };
 
-  const updatedLeaderboard = buildUnifiedLeaderboardState(params.profile, [updatedPlayer]);
-  liveSessionSync.publishPlayerEntry(updatedPlayer);
-  void syncEntriesWithBackendServer(updatedLeaderboard.entries);
+  const updatedLeaderboard = buildUnifiedLeaderboardState(
+    params.profile,
+    remoteEntriesMemoryCache.has(canonicalId) ? undefined : [updatedPlayer]
+  );
   notifyCrossTabLeaderboardChange();
 
   const fallbackResult: ScoreSubmissionResult = {

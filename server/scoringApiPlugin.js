@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
-const LEADERBOARD_FILE = path.join(DATA_DIR, 'leaderboard-v6.json');
+const LEADERBOARD_FILE = path.join(DATA_DIR, 'leaderboard-v7.json');
 
 const MAX_BODY_BYTES = 32_768; // 32 KB strict request payload cap
 const MAX_SESSIONS_IN_MEMORY = 2_000;
@@ -584,53 +584,9 @@ export function createScoringMiddleware() {
         return sendJson(res, 200, state);
       }
 
-      // POST /api/leaderboard/sync
+      // POST /api/leaderboard/sync (disabled: Cloud Firestore is the sole source of truth for leaderboard entries)
       if (req.method === 'POST' && pathname === '/api/leaderboard/sync') {
-        const body = await readJsonBody(req);
-        const incoming = Array.isArray(body.entries) ? body.entries.slice(0, 200) : [];
-        let changed = false;
-
-        for (const item of incoming) {
-          if (!item || typeof item !== 'object') continue;
-          const cleanName = sanitizePlayerName(item.playerName);
-          if (!cleanName || cleanName.length < 2 || cleanName.toLowerCase() === 'player') {
-            continue;
-          }
-          const cleanRegion = sanitizeRegion(item.region);
-          const existing = resolveOrCreatePlayer(
-            playersMap,
-            String(item.playerId || ''),
-            cleanName,
-            cleanRegion
-          );
-          const incomingScore = Math.max(0, Math.floor(Number(item.cumulativeScore) || 0));
-          const incomingSolved = Math.max(0, Math.floor(Number(item.puzzlesSolved) || 0));
-          const incomingBest =
-            typeof item.bestTimeSeconds === 'number' && item.bestTimeSeconds > 0
-              ? Math.floor(item.bestTimeSeconds)
-              : null;
-
-          if (incomingScore > existing.cumulativeScore) {
-            existing.cumulativeScore = incomingScore;
-            changed = true;
-          }
-          if (incomingSolved > existing.puzzlesSolved) {
-            existing.puzzlesSolved = incomingSolved;
-            changed = true;
-          }
-          if (
-            incomingBest !== null &&
-            (existing.bestTimeSeconds === null || incomingBest < existing.bestTimeSeconds)
-          ) {
-            existing.bestTimeSeconds = incomingBest;
-            changed = true;
-          }
-        }
-
-        if (changed) {
-          savePlayersMap(playersMap);
-          broadcastLeaderboardUpdate();
-        }
+        await readJsonBody(req);
         return sendJson(res, 200, { synced: true, totalPlayers: playersMap.size });
       }
 

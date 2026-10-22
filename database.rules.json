@@ -2,7 +2,7 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "presence_v6": {
+    "presence_v7": {
       ".read": "auth != null",
       "$presenceKey": {
         ".write": "auth != null && ($presenceKey.beginsWith(auth.uid + '_') || $presenceKey === auth.uid) && (!newData.exists() || (newData.hasChildren(['uid', 'playerId', 'playerName', 'region', 'isPlaying', 'state', 'lastChanged']) && newData.child('uid').val() === auth.uid && newData.child('playerId').isString() && newData.child('playerId').val().length >= 2 && newData.child('playerId').val().length <= 80 && newData.child('playerName').isString() && newData.child('playerName').val().length >= 2 && newData.child('playerName').val().length <= 32 && newData.child('region').isString() && newData.child('region').val().length >= 2 && newData.child('region').val().length <= 32 && newData.child('isPlaying').isBoolean() && (newData.child('state').val() === 'online' || newData.child('state').val() === 'offline')))"

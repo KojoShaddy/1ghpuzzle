@@ -26,6 +26,7 @@ import {
 } from '../shared/scoring';
 import {
   abandonServerPuzzleSession,
+  broadcastPlayerPlayingState,
   completeServerPuzzleSession,
   createPlayerIdFromProfile,
   fetchGlobalLeaderboard,
@@ -47,7 +48,7 @@ interface UsePuzzleGameProps {
 export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const [fallbackPlayerId] = useState<string>(() => getOrCreatePlayerId());
   const [playerProfile, setPlayerProfile] = useLocalStorage<PlayerProfile | null>(
-    'ghana-puzzle-player-profile-v6',
+    'ghana-puzzle-player-profile-v7',
     null
   );
 
@@ -87,7 +88,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const [lastScoreResult, setLastScoreResult] = useState<ScoreSubmissionResult | null>(null);
 
   const [bestScores, setBestScores] = useLocalStorage<BestScoresMap>(
-    'ghana-puzzle-best-scores-v6',
+    'ghana-puzzle-best-scores-v7',
     {}
   );
 
@@ -130,15 +131,10 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
       });
     };
 
-    // If a returning participant already has a registered profile, announce them to the live session immediately
     if (playerProfile && playerProfile.name.trim().length >= 2) {
-      void registerPlayerProfile(playerProfile).then((state) => {
-        if (!active) return;
-        setLeaderboard(state);
-      });
-    } else {
-      refreshLeaderboard();
+      broadcastPlayerPlayingState(playerProfile, false);
     }
+    refreshLeaderboard();
 
     const unsubscribe = subscribeToLiveLeaderboard(refreshLeaderboard);
 

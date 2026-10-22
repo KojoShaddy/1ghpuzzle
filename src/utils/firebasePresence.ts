@@ -27,7 +27,7 @@ export interface LivePresenceSnapshot {
   playingPlayerIds: Set<string>;
 }
 
-const CLIENT_PRESENCE_SESSION_KEY = 'ghana-puzzle-presence-client-id-v6';
+const CLIENT_PRESENCE_SESSION_KEY = 'ghana-puzzle-presence-client-id-v7';
 
 function getOrCreateClientPresenceId(): string {
   if (typeof window === 'undefined') return 'client-server';
@@ -79,8 +79,12 @@ class FirebasePresenceManager {
 
     if (!this.initialized) {
       this.initialized = true;
-      void this.setupRealtimeDatabasePresence();
-      this.setupBackendPresenceFallback();
+      const services = getFirebaseServices();
+      if (services && services.rtdb) {
+        void this.setupRealtimeDatabasePresence();
+      } else {
+        this.setupBackendPresenceFallback();
+      }
     } else {
       void this.publishCurrentPresenceState();
     }
@@ -174,11 +178,11 @@ class FirebasePresenceManager {
     const { rtdb } = services;
     // Key by auth UID + tab connection ID so multiple tabs or devices each have accurate disconnect tracking
     const presenceKey = `${user.uid}_${this.clientConnId}`;
-    this.activeRtdbPath = `presence_v6/${presenceKey}`;
+    this.activeRtdbPath = `presence_v7/${presenceKey}`;
 
     const connectedRef = ref(rtdb, '.info/connected');
     const userPresenceRef = ref(rtdb, this.activeRtdbPath);
-    const allPresenceRef = ref(rtdb, 'presence_v6');
+    const allPresenceRef = ref(rtdb, 'presence_v7');
 
     this.connectedUnsub = onValue(connectedRef, async (snap) => {
       const connected = snap.val() === true;
@@ -243,20 +247,22 @@ class FirebasePresenceManager {
   }
 
   private async publishCurrentPresenceState(): Promise<void> {
-    // 1. Update Firebase Realtime Database presence node if configured
     const services = getFirebaseServices();
-    if (services && services.rtdb && this.isRtdbConnected) {
-      const user = await ensureAnonymousAuth();
-      if (user) {
-        try {
-          await this.writeRtdbPresenceNode(user.uid);
-        } catch {
-          // Ignore RTDB write error
+    if (services && services.rtdb) {
+      if (this.isRtdbConnected) {
+        const user = await ensureAnonymousAuth();
+        if (user) {
+          try {
+            await this.writeRtdbPresenceNode(user.uid);
+          } catch {
+            // Ignore RTDB write error
+          }
         }
       }
+      return;
     }
 
-    // 2. Also send heartbeat to backend /api/presence/heartbeat
+    // Fallback to backend /api/presence/heartbeat only when Firebase RTDB is not configured
     void this.sendBackendPresenceHeartbeat();
   }
 
