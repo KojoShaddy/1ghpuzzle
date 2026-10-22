@@ -47,7 +47,7 @@ interface UsePuzzleGameProps {
 export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const [fallbackPlayerId] = useState<string>(() => getOrCreatePlayerId());
   const [playerProfile, setPlayerProfile] = useLocalStorage<PlayerProfile | null>(
-    'ghana-puzzle-player-profile-v4',
+    'ghana-puzzle-player-profile-v5',
     null
   );
 
@@ -87,7 +87,7 @@ export function usePuzzleGame({ soundEnabled }: UsePuzzleGameProps) {
   const [lastScoreResult, setLastScoreResult] = useState<ScoreSubmissionResult | null>(null);
 
   const [bestScores, setBestScores] = useLocalStorage<BestScoresMap>(
-    'ghana-puzzle-best-scores-v4',
+    'ghana-puzzle-best-scores-v5',
     {}
   );
 

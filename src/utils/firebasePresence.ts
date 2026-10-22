@@ -27,7 +27,7 @@ export interface LivePresenceSnapshot {
   playingPlayerIds: Set<string>;
 }
 
-const CLIENT_PRESENCE_SESSION_KEY = 'ghana-puzzle-presence-client-id-v4';
+const CLIENT_PRESENCE_SESSION_KEY = 'ghana-puzzle-presence-client-id-v5';
 
 function getOrCreateClientPresenceId(): string {
   if (typeof window === 'undefined') return 'client-server';

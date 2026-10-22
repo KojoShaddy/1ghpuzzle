@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-// @ts-expect-error -- Local ESM server plugin for trusted scoring & leaderboard API
+// @ts-expect-error -- Local ESM server plugin for trusted scoring & leaderboard API (v5)
 import { scoringBackendPlugin } from './server/scoringApiPlugin.js';
 
 export default defineConfig({
